@@ -1,0 +1,42 @@
+{
+    "id": "com.eagle.lottie-preview",
+    "version": "1.0.0",
+    "platform": "all",
+    "arch": "all",
+    "name": "Lottie 预览",
+    "description": "支持 Lottie 动画格式的预览插件，包括带外部图片资源的 Lottie 文件和ZIP包",
+    "logo": "/logo.png",
+    "keywords": [
+        "lottie",
+        "animation",
+        "json",
+        "zip",
+        "动画"
+    ],
+    "devTools": false,
+    "dependencies": {
+        "adm-zip": "^0.5.10"
+    },
+    "preview": {
+        "json": {
+            "thumbnail": {
+                "path": "thumbnail/lottie.js",
+                "size": 400,
+                "allowZoom": true
+            },
+            "viewer": {
+                "path": "viewer/lottie.html"
+            }
+        },
+        "zip": {
+            "thumbnail": {
+                "path": "thumbnail/lottie-zip.js",
+                "size": 400,
+                "allowZoom": true
+            },
+            "viewer": {
+                "path": "viewer/lottie-zip.html"
+            }
+        }
+    }
+}
