@@ -103,11 +103,15 @@
       position: absolute;
     }
 
-    #time-display {
+    #frame-counter {
       font-size: 14px;
       color: rgba(255, 255, 255, 0.7);
-      min-width: 80px;
+      min-width: 40px;
       text-align: right;
+      /* background: rgba(255, 255, 255, 0.1); */
+      padding: 3px 8px;
+      border-radius: 10px;
+      font-size: 12px;
     }
 
     #buttons {
@@ -145,7 +149,7 @@
     .play-pause-button {
       width: 30px;
       height: 30px;
-      background: rgba(255, 255, 255, 0.1);
+      /* background: rgba(255, 255, 255, 0.1); */
       border-radius: 50%;
     }
 
@@ -154,25 +158,7 @@
       font-size: 14px;
       background: rgba(255, 255, 255, 0.1);
       padding: 5px 10px;
-      border-radius: 3px;
-    }
-
-    #progress-info {
-      position: absolute;
-      bottom: 100px;
-      left: 0;
-      right: 0;
-      display: flex;
-      justify-content: center;
-      padding: 5px;
-    }
-
-    #frame-counter {
-      background: rgba(0, 0, 0, 0.5);
-      padding: 3px 8px;
-      border-radius: 10px;
-      font-size: 12px;
-      color: rgba(255, 255, 255, 0.7);
+      border-radius: 5px;
     }
 
     #dimensions-info {
@@ -204,16 +190,12 @@
     <div id="error-message"></div>
   </div>
 
-  <div id="progress-info">
-    <div id="frame-counter">5 / 7</div>
-  </div>
-
   <div id="controls">
     <div id="timeline">
       <div id="progress-container">
         <div id="progress-bar"></div>
       </div>
-      <div id="time-display">0:00 / 0:00</div>
+      <div id="frame-counter">1 / 1</div>
     </div>
     <div id="buttons">
       <div class="button-group">
@@ -273,7 +255,6 @@
       const fullscreenBtn = document.getElementById('fullscreen');
       const progressContainer = document.getElementById('progress-container');
       const progressBar = document.getElementById('progress-bar');
-      const timeDisplay = document.getElementById('time-display');
       const frameCounter = document.getElementById('frame-counter');
       const errorMessage = document.getElementById('error-message');
       const titleArea = document.getElementById('title-area');
@@ -351,14 +332,15 @@
       function updateProgress(currentTime, totalTime) {
         const progress = (currentTime / totalTime) * 100;
         progressBar.style.width = `${progress}%`;
-        timeDisplay.textContent = `${formatTime(currentTime)} / ${formatTime(totalTime)}`;
       }
 
       // 更新帧计数器
       function updateFrameCounter() {
         if (animation && totalFrames > 0) {
           currentFrame = Math.round(animation.currentFrame);
-          frameCounter.textContent = `${currentFrame} / ${totalFrames}`;
+          // 显示帧数从1开始，而不是0
+          const displayFrame = currentFrame + 1;
+          frameCounter.textContent = `${displayFrame} / ${totalFrames}`;
         }
       }
 
@@ -641,9 +623,8 @@
             // 调整动画尺寸
             resizeAnimation();
 
-            // 更新信息显示
-            frameCounter.textContent = `0 / ${totalFrames}`;
-            timeDisplay.textContent = `0:00 / ${formatTime(duration)}`;
+            // 更新信息显示 - 初始显示第1帧
+            frameCounter.textContent = `1 / ${totalFrames}`;
 
             // 动画加载完成后隐藏标题区域
             setTimeout(() => {
@@ -690,7 +671,9 @@
 
       nextFrameBtn.addEventListener('click', () => {
         if (!animation) return;
-        const newFrame = Math.min(totalFrames - 1, animation.currentFrame + 1);
+        // 修复：允许到达最后一帧（totalFrames - 1）
+        const maxFrame = totalFrames - 1;
+        const newFrame = Math.min(maxFrame, Math.floor(animation.currentFrame) + 1);
         animation.goToAndStop(newFrame, true);
         updateFrameCounter();
 
@@ -710,7 +693,7 @@
 
         const rect = progressContainer.getBoundingClientRect();
         const clickPos = (e.clientX - rect.left) / rect.width;
-        const seekFrame = clickPos * totalFrames;
+        const seekFrame = clickPos * (totalFrames - 1);
 
         animation.goToAndStop(seekFrame, true);
         updateFrameCounter();
