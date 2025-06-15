@@ -63,7 +63,6 @@
       color: rgba(255, 255, 255, 0.8);
     }
 
-
     #controls {
       position: absolute;
       bottom: 0;
@@ -218,12 +217,15 @@
   </style>
   <!-- 引入 Lottie 库 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.10.2/lottie.min.js"></script>
+  <!-- 引入 JSZip 库用于解压 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 
 <body>
   <div id="title-area">
-    <div class="title">data</div>
+    <div class="title">加载中...</div>
   </div>
+
   <div id="loading-overlay">
     <div class="spinner"></div>
     <div>正在解压并加载动画...</div>
@@ -233,12 +235,11 @@
 
   <div id="lottie-container">
     <div id="lottie-animation"></div>
-    
     <div id="error-message"></div>
   </div>
 
   <div id="progress-info">
-    <div id="frame-counter">5 / 7</div>
+    <div id="frame-counter">0 / 0</div>
   </div>
 
   <div id="controls">
@@ -291,10 +292,6 @@
       // 获取 URL 参数
       const urlParams = new URLSearchParams(window.location.search);
       const zipPath = urlParams.get('path');
-      const width = urlParams.get('width');
-      const height = urlParams.get('height');
-      const theme = urlParams.get('theme');
-      const lang = urlParams.get('lang');
 
       // UI 元素
       const loadingOverlay = document.getElementById('loading-overlay');
@@ -313,7 +310,6 @@
       const titleArea = document.getElementById('title-area');
       const titleElement = document.querySelector('.title');
 
-
       // 动画变量
       let animation = null;
       let isPlaying = false;
@@ -321,18 +317,6 @@
       let currentFrame = 0;
       let duration = 0;
       let speedMultiplier = 1;
-      let tempDir = null;
-      let lottieJsonPath = null;
-      let extractedFiles = [];
-      let imageCache = {};
-
-      // Node.js 模块
-      const fs = require('fs');
-      const path = require('path');
-      const os = require('os');
-
-      // 导入 ZIP 工具模块
-      const zipUtil = require('../js/zip-util');
 
       // 更新标题
       function updateTitle(filename) {
@@ -410,138 +394,203 @@
         loadingOverlay.style.display = 'none';
       }
 
-      // 将图片转换为 Base64
-      async function loadImageAsBase64(imagePath) {
-        try {
-          // 检查缓存
-          if (imageCache[imagePath]) {
-            return imageCache[imagePath];
-          }
+      // 获取文件的 MIME 类型
+      function getMimeType(filename) {
+        const ext = filename.split('.').pop().toLowerCase();
+        const mimeTypes = {
+          'png': 'image/png',
+          'jpg': 'image/jpeg',
+          'jpeg': 'image/jpeg',
+          'gif': 'image/gif',
+          'svg': 'image/svg+xml',
+          'webp': 'image/webp'
+        };
+        return mimeTypes[ext] || 'image/png';
+      }
 
-          // 读取图片文件
-          const imageBuffer = await fs.promises.readFile(imagePath);
+      // 将文件转换为 Base64
+      async function fileToBase64(uint8Array, mimeType) {
+        return new Promise((resolve) => {
+          const blob = new Blob([uint8Array], { type: mimeType });
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.readAsDataURL(blob);
+        });
+      }
 
-          // 确定 MIME 类型
-          let mimeType = 'image/png'; // 默认
-          const ext = path.extname(imagePath).toLowerCase();
-          if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
-          else if (ext === '.png') mimeType = 'image/png';
-          else if (ext === '.svg') mimeType = 'image/svg+xml';
-          else if (ext === '.gif') mimeType = 'image/gif';
-          else if (ext === '.webp') mimeType = 'image/webp';
+      // 查找 Lottie JSON 文件
+      function findLottieJsonFile(files) {
+        const jsonFiles = Object.keys(files).filter(filename => 
+          filename.toLowerCase().endsWith('.json')
+        );
 
-          // 转换为 Base64
-          const base64 = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
-
-          // 缓存结果
-          imageCache[imagePath] = base64;
-
-          return base64;
-        } catch (error) {
-          console.error(`无法加载图片: ${imagePath}`, error);
+        if (jsonFiles.length === 0) {
           return null;
         }
+
+        // 优先查找根目录的 JSON 文件
+        const rootJsonFiles = jsonFiles.filter(filename => !filename.includes('/'));
+        if (rootJsonFiles.length > 0) {
+          // 优先查找可能的 Lottie 文件名
+          const possibleNames = ['data.json', 'animation.json', 'lottie.json', 'main.json'];
+          for (const name of possibleNames) {
+            const found = rootJsonFiles.find(filename => filename.toLowerCase() === name.toLowerCase());
+            if (found) return found;
+          }
+          return rootJsonFiles[0];
+        }
+
+        return jsonFiles[0];
       }
 
       // 处理 Lottie 动画中的外部资源
-      async function processLottieWithAssets(jsonData, jsonFilePath, extractDir) {
+      async function processLottieWithAssets(jsonData, files) {
         try {
-          // 获取 JSON 文件的目录
-          const jsonDir = path.dirname(jsonFilePath);
-
-          // 检查是否有 assets
-          const hasAssets = jsonData.assets && jsonData.assets.some(asset => asset.p && asset.u);
-
-          if (!hasAssets) {
-            return jsonData; // 没有外部资源，直接返回
+          if (!jsonData.assets || !Array.isArray(jsonData.assets)) {
+            return jsonData;
           }
 
-          // 查找所有图片
-          const allImages = await zipUtil.findAllImages(extractDir);
+          console.log('开始处理资源，assets 数量:', jsonData.assets.length);
+
+          // 查找所有图片文件
+          const imageFiles = Object.keys(files).filter(filename => {
+            const ext = filename.split('.').pop().toLowerCase();
+            return ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext);
+          });
+
+          console.log('找到图片文件:', imageFiles);
 
           // 处理所有资源
           for (let i = 0; i < jsonData.assets.length; i++) {
             const asset = jsonData.assets[i];
 
-            // 跳过已经内嵌的资源
-            if (asset.e === 1) continue;
+            // 跳过已经内嵌的资源或者不是图片资源
+            if (asset.e === 1 || !asset.p) continue;
 
-            // 尝试各种可能的路径模式查找图片
-            let imagePath = null;
+            console.log('处理资源:', asset);
 
-            // 1. 尝试使用 u/p 组合路径
-            if (asset.u && asset.p) {
-              const fullPath = path.join(jsonDir, asset.u, asset.p);
-              if (fs.existsSync(fullPath)) {
-                imagePath = fullPath;
+            // 查找匹配的图片文件
+            let matchedFile = null;
+            const assetPath = asset.p;
+
+            // 构建可能的完整路径
+            let possiblePaths = [assetPath];
+            
+            // 如果有 u 属性（通常是 "images/"），组合路径
+            if (asset.u) {
+              possiblePaths.push(asset.u + assetPath);
+              possiblePaths.push(asset.u.replace(/\/$/, '') + '/' + assetPath);
+            }
+
+            // 添加 images/ 前缀的可能性
+            possiblePaths.push('images/' + assetPath);
+            possiblePaths.push('./images/' + assetPath);
+
+            // 只使用文件名匹配
+            const assetFileName = assetPath.split('/').pop();
+            possiblePaths.push(assetFileName);
+
+            console.log('尝试匹配路径:', possiblePaths);
+
+            // 尝试各种可能的路径
+            for (const possiblePath of possiblePaths) {
+              matchedFile = imageFiles.find(filename => {
+                return filename === possiblePath || 
+                       filename.endsWith('/' + possiblePath) ||
+                       filename.split('/').pop() === possiblePath;
+              });
+              if (matchedFile) {
+                console.log('找到匹配文件:', possiblePath, '->', matchedFile);
+                break;
               }
             }
 
-            // 2. 根据文件名在所有图片中查找
-            if (!imagePath) {
-              const imageName = asset.p;
-              const matchedImage = allImages.find(img => path.basename(img) === imageName);
-              if (matchedImage) {
-                imagePath = matchedImage;
-              }
-            }
+            if (matchedFile && files[matchedFile]) {
+              try {
+                const mimeType = getMimeType(matchedFile);
+                const base64 = await fileToBase64(files[matchedFile], mimeType);
 
-            // 如果找到了图片，将其转换为 Base64
-            if (imagePath) {
-              const base64 = await loadImageAsBase64(imagePath);
-              if (base64) {
                 // 将图片转换为内嵌资源
                 asset.e = 1; // 标记为内嵌
                 asset.p = base64; // 替换路径为 Base64 数据
-                asset.u = ""; // 清除 u 路径
+                if (asset.u) asset.u = ""; // 清除 u 路径
+
+                console.log(`✅ 成功处理资源: ${assetPath} -> ${matchedFile}`);
+              } catch (error) {
+                console.error(`❌ 处理资源时出错: ${assetPath}`, error);
               }
             } else {
-              console.warn(`未找到图片资源: ${asset.p}`);
+              console.warn(`⚠️ 未找到匹配的图片资源: ${assetPath}`);
+              console.log('可用的图片文件:', imageFiles);
             }
           }
 
           return jsonData;
         } catch (error) {
           console.error("处理外部资源时出错:", error);
-          return jsonData; // 出错时返回原始数据
+          return jsonData;
         }
       }
 
-      // 加载 Lottie 动画
-      async function loadAnimation() {
+      // 从 URL 加载并解压 ZIP 文件
+      async function loadZipFromUrl(url) {
         try {
-          if (!zipPath) {
-            throw new Error("未提供ZIP文件路径");
+          console.log('开始加载 ZIP 文件:', url);
+
+          // 获取文件
+          const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error(`无法加载文件: ${response.status} ${response.statusText}`);
           }
 
-          console.log('开始加载动画，ZIP路径:', zipPath);
+          const arrayBuffer = await response.arrayBuffer();
+          console.log('文件下载完成，大小:', arrayBuffer.byteLength);
 
-          // 1. 解压ZIP文件到临时目录
-          const { tempDir: extractedDir, files } = await zipUtil.extractZip(zipPath);
-          tempDir = extractedDir;
-          extractedFiles = files || [];
+          // 使用 JSZip 解压
+          const zip = new JSZip();
+          const zipContent = await zip.loadAsync(arrayBuffer);
 
-          console.log('解压完成，文件列表:', extractedFiles);
+          // 提取所有文件
+          const files = {};
+          const promises = [];
 
-          // 2. 在解压目录中查找Lottie JSON文件
-          lottieJsonPath = await zipUtil.findLottieJsonFile(tempDir);
-          console.log('找到Lottie JSON文件:', lottieJsonPath);
+          zipContent.forEach((relativePath, zipEntry) => {
+            if (!zipEntry.dir) {
+              promises.push(
+                zipEntry.async('uint8array').then(content => {
+                  files[relativePath] = content;
+                })
+              );
+            }
+          });
 
-          // 3. 更新标题
-          const filename = path.basename(zipPath, '.zip');
+          await Promise.all(promises);
+          console.log('解压完成，文件列表:', Object.keys(files));
+
+          // 查找 Lottie JSON 文件
+          const jsonFilename = findLottieJsonFile(files);
+          if (!jsonFilename) {
+            throw new Error("ZIP 文件中未找到 JSON 文件");
+          }
+
+          console.log('找到 Lottie JSON 文件:', jsonFilename);
+
+          // 读取 JSON 内容
+          const jsonContent = new TextDecoder().decode(files[jsonFilename]);
+          let lottieData = JSON.parse(jsonContent);
+
+          console.log('JSON 文件读取成功，开始处理资源');
+
+          // 处理外部资源，将图片转换为 base64
+          lottieData = await processLottieWithAssets(lottieData, files);
+
+          console.log('资源处理完成，开始创建动画');
+
+          // 更新标题
+          const filename = url.split('/').pop().replace('.zip', '');
           updateTitle(filename);
 
-          // 4. 读取Lottie JSON文件
-          console.log('读取JSON文件内容');
-          let lottieData = JSON.parse(await fs.promises.readFile(lottieJsonPath, 'utf8'));
-          console.log('JSON文件读取成功，开始处理资源');
-
-          // 5. 处理外部资源
-          lottieData = await processLottieWithAssets(lottieData, lottieJsonPath, tempDir);
-          console.log('资源处理完成');
-
-          // 6. 创建 Lottie 动画
-          console.log('开始创建Lottie动画');
+          // 创建 Lottie 动画
           animation = lottie.loadAnimation({
             container: document.getElementById('lottie-animation'),
             renderer: 'svg',
@@ -554,45 +603,14 @@
             }
           });
 
-          // 7. 注册全局图片加载器
-          window.loadImage = async (path, img) => {
-            try {
-              console.log('加载图片:', path);
-              // 检查是否是 Base64 数据
-              if (path.startsWith('data:')) {
-                img.src = path;
-                return;
-              }
-
-              // 尝试在临时目录中查找图片
-              const allImages = await zipUtil.findAllImages(tempDir, extractedFiles);
-              const imageName = path.substring(path.lastIndexOf('/') + 1);
-              console.log('查找图片:', imageName);
-              const matchedImage = allImages.find(img => img.endsWith(imageName));
-
-              if (matchedImage) {
-                console.log('找到匹配的图片:', matchedImage);
-                const base64 = await loadImageAsBase64(matchedImage);
-                if (base64) {
-                  img.src = base64;
-                  console.log('图片加载成功');
-                }
-              } else {
-                console.warn('未找到匹配的图片:', imageName);
-              }
-            } catch (err) {
-              console.error("加载图片时出错:", err);
-            }
-          };
-
-          // 8. 初始化UI状态
+          // 设置播放状态
           isPlaying = true;
           playIcon.style.display = 'none';
           pauseIcon.style.display = 'block';
 
-          // 9. 获取动画信息
+          // 监听动画加载完成
           animation.addEventListener('DOMLoaded', () => {
-            console.log('动画DOM加载完成');
+            console.log('动画 DOM 加载完成');
             totalFrames = Math.floor(animation.totalFrames);
             duration = animation.getDuration();
 
@@ -618,7 +636,7 @@
 
           // 监听错误
           animation.addEventListener('error', (error) => {
-            console.error('Lottie动画错误:', error);
+            console.error('Lottie 动画错误:', error);
             showError(`加载 Lottie 动画时出错: ${error.message || "未知错误"}`);
           });
 
@@ -632,8 +650,8 @@
           });
 
         } catch (error) {
-          console.error("加载 Lottie 动画时出错:", error);
-          showError(`加载 Lottie 动画时出错: ${error.message || "未知错误"}`);
+          console.error("加载 ZIP 文件时出错:", error);
+          showError(`加载 ZIP 文件时出错: ${error.message || "未知错误"}`);
         }
       }
 
@@ -646,7 +664,6 @@
         animation.goToAndStop(newFrame, true);
         updateFrameCounter();
 
-        // 如果是播放状态，暂停
         if (isPlaying) {
           isPlaying = false;
           playIcon.style.display = 'block';
@@ -660,7 +677,6 @@
         animation.goToAndStop(newFrame, true);
         updateFrameCounter();
 
-        // 如果是播放状态，暂停
         if (isPlaying) {
           isPlaying = false;
           playIcon.style.display = 'block';
@@ -681,25 +697,16 @@
         animation.goToAndStop(seekFrame, true);
         updateFrameCounter();
 
-        // 更新进度条
         const currentTime = (seekFrame / animation.frameRate);
         updateProgress(currentTime, duration);
       });
 
-      nextButton.addEventListener('click', () => {
-        // 处理下一步按钮点击事件
-        // 这里可以根据需要添加逻辑
-      });
-
-      // 页面卸载时清理临时目录
-      window.addEventListener('beforeunload', () => {
-        if (tempDir) {
-          zipUtil.cleanupTempDir(tempDir);
-        }
-      });
-
-      // 加载动画
-      loadAnimation();
+      // 自动加载
+      if (zipPath) {
+        loadZipFromUrl(zipPath);
+      } else {
+        showError('未提供 ZIP 文件路径');
+      }
     });
   </script>
 </body>
