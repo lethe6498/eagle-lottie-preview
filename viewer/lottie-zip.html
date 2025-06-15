@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Lottie ZIP 预览</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+      background-color: #000;
+      color: #fff;
+      font-family: Arial, sans-serif;
+    }
+
+    #lottie-container {
+      width: 100%;
+      height: calc(100% - 100px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    #lottie-animation {
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    #error-message {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.7);
+      padding: 20px;
+      border-radius: 5px;
+      color: #ff5555;
+      display: none;
+      text-align: center;
+      z-index: 100;
+    }
+
+    #title-area {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      text-align: center;
+      z-index: 50;
+      pointer-events: none;
+    }
+
+    .title {
+      font-size: 20px;
+      margin-bottom: 20px;
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+
+    #controls {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 100px;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      flex-direction: column;
+    }
+
+    #timeline {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+    }
+
+    #progress-container {
+      flex: 1;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.2);
+      position: relative;
+      cursor: pointer;
+      margin: 0 15px;
+    }
+
+    #progress-bar {
+      height: 100%;
+      background: white;
+      width: 0%;
+      position: absolute;
+    }
+
+    #time-display {
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.7);
+      min-width: 80px;
+      text-align: right;
+    }
+
+    #buttons {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 20px;
+      align-items: center;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+    }
+
+    .control-button {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+      opacity: 0.7;
+      padding: 5px;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .control-button:hover {
+      opacity: 1;
+    }
+
+    .play-pause-button {
+      width: 40px;
+      height: 40px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 50%;
+    }
+
+    .speed-button,
+    .fullscreen-button {
+      font-size: 14px;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 5px 10px;
+      border-radius: 3px;
+    }
+
+    #progress-info {
+      position: absolute;
+      bottom: 100px;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: center;
+      padding: 5px;
+    }
+
+    #frame-counter {
+      background: rgba(0, 0, 0, 0.5);
+      padding: 3px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    #zip-badge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: #2563eb;
+      color: white;
+      padding: 3px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    #loading-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+  <!-- 引入 Lottie 库 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.10.2/lottie.min.js"></script>
+</head>
+
+<body>
+  <div id="title-area">
+    <div class="title">data</div>
+  </div>
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <div>正在解压并加载动画...</div>
+  </div>
+
+  <div id="zip-badge">ZIP</div>
+
+  <div id="lottie-container">
+    <div id="lottie-animation"></div>
+    
+    <div id="error-message"></div>
+  </div>
+
+  <div id="progress-info">
+    <div id="frame-counter">5 / 7</div>
+  </div>
+
+  <div id="controls">
+    <div id="timeline">
+      <div id="progress-container">
+        <div id="progress-bar"></div>
+      </div>
+      <div id="time-display">0:00 / 0:00</div>
+    </div>
+    <div id="buttons">
+      <div class="button-group">
+        <button class="control-button" id="prev-frame">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 20L9 12l10-8v16z"></path>
+            <path d="M5 19V5"></path>
+          </svg>
+        </button>
+        <button class="control-button play-pause-button" id="play-pause">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            id="play-icon">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            id="pause-icon" style="display:none;">
+            <rect x="6" y="4" width="4" height="16"></rect>
+            <rect x="14" y="4" width="4" height="16"></rect>
+          </svg>
+        </button>
+        <button class="control-button" id="next-frame">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 4l10 8-10 8V4z"></path>
+            <path d="M19 5v14"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="button-group">
+        <button class="control-button speed-button" id="speed-control">1x</button>
+        <button class="control-button fullscreen-button" id="fullscreen">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3">
+            </path>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      // 获取 URL 参数
+      const urlParams = new URLSearchParams(window.location.search);
+      const zipPath = urlParams.get('path');
+      const width = urlParams.get('width');
+      const height = urlParams.get('height');
+      const theme = urlParams.get('theme');
+      const lang = urlParams.get('lang');
+
+      // UI 元素
+      const loadingOverlay = document.getElementById('loading-overlay');
+      const playPauseBtn = document.getElementById('play-pause');
+      const playIcon = document.getElementById('play-icon');
+      const pauseIcon = document.getElementById('pause-icon');
+      const prevFrameBtn = document.getElementById('prev-frame');
+      const nextFrameBtn = document.getElementById('next-frame');
+      const speedControlBtn = document.getElementById('speed-control');
+      const fullscreenBtn = document.getElementById('fullscreen');
+      const progressContainer = document.getElementById('progress-container');
+      const progressBar = document.getElementById('progress-bar');
+      const timeDisplay = document.getElementById('time-display');
+      const frameCounter = document.getElementById('frame-counter');
+      const errorMessage = document.getElementById('error-message');
+      const titleArea = document.getElementById('title-area');
+      const titleElement = document.querySelector('.title');
+
+
+      // 动画变量
+      let animation = null;
+      let isPlaying = false;
+      let totalFrames = 0;
+      let currentFrame = 0;
+      let duration = 0;
+      let speedMultiplier = 1;
+      let tempDir = null;
+      let lottieJsonPath = null;
+      let extractedFiles = [];
+      let imageCache = {};
+
+      // Node.js 模块
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
+
+      // 导入 ZIP 工具模块
+      const zipUtil = require('../js/zip-util');
+
+      // 更新标题
+      function updateTitle(filename) {
+        titleElement.textContent = filename || 'Lottie 动画';
+      }
+
+      // 格式化时间
+      function formatTime(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60).toString().padStart(2, '0');
+        return `${mins}:${secs}`;
+      }
+
+      // 更新进度条
+      function updateProgress(currentTime, totalTime) {
+        const progress = (currentTime / totalTime) * 100;
+        progressBar.style.width = `${progress}%`;
+        timeDisplay.textContent = `${formatTime(currentTime)} / ${formatTime(totalTime)}`;
+      }
+
+      // 更新帧计数器
+      function updateFrameCounter() {
+        if (animation && totalFrames > 0) {
+          currentFrame = Math.round(animation.currentFrame);
+          frameCounter.textContent = `${currentFrame} / ${totalFrames}`;
+        }
+      }
+
+      // 播放/暂停切换
+      function togglePlayPause() {
+        if (!animation) return;
+
+        if (isPlaying) {
+          animation.pause();
+          playIcon.style.display = 'block';
+          pauseIcon.style.display = 'none';
+        } else {
+          animation.play();
+          playIcon.style.display = 'none';
+          pauseIcon.style.display = 'block';
+        }
+        isPlaying = !isPlaying;
+      }
+
+      // 速度控制
+      function cycleSpeed() {
+        const speeds = [0.5, 1, 1.5, 2];
+        const currentIndex = speeds.indexOf(speedMultiplier);
+        const nextIndex = (currentIndex + 1) % speeds.length;
+        speedMultiplier = speeds[nextIndex];
+        speedControlBtn.textContent = `${speedMultiplier}x`;
+
+        if (animation) {
+          animation.setSpeed(speedMultiplier);
+        }
+      }
+
+      // 全屏控制
+      function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(err => {
+            console.error(`全屏错误: ${err.message}`);
+          });
+        } else {
+          if (document.exitFullscreen) {
+            document.exitFullscreen();
+          }
+        }
+      }
+
+      // 显示错误
+      function showError(message) {
+        errorMessage.textContent = message;
+        errorMessage.style.display = 'block';
+        loadingOverlay.style.display = 'none';
+      }
+
+      // 将图片转换为 Base64
+      async function loadImageAsBase64(imagePath) {
+        try {
+          // 检查缓存
+          if (imageCache[imagePath]) {
+            return imageCache[imagePath];
+          }
+
+          // 读取图片文件
+          const imageBuffer = await fs.promises.readFile(imagePath);
+
+          // 确定 MIME 类型
+          let mimeType = 'image/png'; // 默认
+          const ext = path.extname(imagePath).toLowerCase();
+          if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
+          else if (ext === '.png') mimeType = 'image/png';
+          else if (ext === '.svg') mimeType = 'image/svg+xml';
+          else if (ext === '.gif') mimeType = 'image/gif';
+          else if (ext === '.webp') mimeType = 'image/webp';
+
+          // 转换为 Base64
+          const base64 = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+
+          // 缓存结果
+          imageCache[imagePath] = base64;
+
+          return base64;
+        } catch (error) {
+          console.error(`无法加载图片: ${imagePath}`, error);
+          return null;
+        }
+      }
+
+      // 处理 Lottie 动画中的外部资源
+      async function processLottieWithAssets(jsonData, jsonFilePath, extractDir) {
+        try {
+          // 获取 JSON 文件的目录
+          const jsonDir = path.dirname(jsonFilePath);
+
+          // 检查是否有 assets
+          const hasAssets = jsonData.assets && jsonData.assets.some(asset => asset.p && asset.u);
+
+          if (!hasAssets) {
+            return jsonData; // 没有外部资源，直接返回
+          }
+
+          // 查找所有图片
+          const allImages = await zipUtil.findAllImages(extractDir);
+
+          // 处理所有资源
+          for (let i = 0; i < jsonData.assets.length; i++) {
+            const asset = jsonData.assets[i];
+
+            // 跳过已经内嵌的资源
+            if (asset.e === 1) continue;
+
+            // 尝试各种可能的路径模式查找图片
+            let imagePath = null;
+
+            // 1. 尝试使用 u/p 组合路径
+            if (asset.u && asset.p) {
+              const fullPath = path.join(jsonDir, asset.u, asset.p);
+              if (fs.existsSync(fullPath)) {
+                imagePath = fullPath;
+              }
+            }
+
+            // 2. 根据文件名在所有图片中查找
+            if (!imagePath) {
+              const imageName = asset.p;
+              const matchedImage = allImages.find(img => path.basename(img) === imageName);
+              if (matchedImage) {
+                imagePath = matchedImage;
+              }
+            }
+
+            // 如果找到了图片，将其转换为 Base64
+            if (imagePath) {
+              const base64 = await loadImageAsBase64(imagePath);
+              if (base64) {
+                // 将图片转换为内嵌资源
+                asset.e = 1; // 标记为内嵌
+                asset.p = base64; // 替换路径为 Base64 数据
+                asset.u = ""; // 清除 u 路径
+              }
+            } else {
+              console.warn(`未找到图片资源: ${asset.p}`);
+            }
+          }
+
+          return jsonData;
+        } catch (error) {
+          console.error("处理外部资源时出错:", error);
+          return jsonData; // 出错时返回原始数据
+        }
+      }
+
+      // 加载 Lottie 动画
+      async function loadAnimation() {
+        try {
+          if (!zipPath) {
+            throw new Error("未提供ZIP文件路径");
+          }
+
+          console.log('开始加载动画，ZIP路径:', zipPath);
+
+          // 1. 解压ZIP文件到临时目录
+          const { tempDir: extractedDir, files } = await zipUtil.extractZip(zipPath);
+          tempDir = extractedDir;
+          extractedFiles = files || [];
+
+          console.log('解压完成，文件列表:', extractedFiles);
+
+          // 2. 在解压目录中查找Lottie JSON文件
+          lottieJsonPath = await zipUtil.findLottieJsonFile(tempDir);
+          console.log('找到Lottie JSON文件:', lottieJsonPath);
+
+          // 3. 更新标题
+          const filename = path.basename(zipPath, '.zip');
+          updateTitle(filename);
+
+          // 4. 读取Lottie JSON文件
+          console.log('读取JSON文件内容');
+          let lottieData = JSON.parse(await fs.promises.readFile(lottieJsonPath, 'utf8'));
+          console.log('JSON文件读取成功，开始处理资源');
+
+          // 5. 处理外部资源
+          lottieData = await processLottieWithAssets(lottieData, lottieJsonPath, tempDir);
+          console.log('资源处理完成');
+
+          // 6. 创建 Lottie 动画
+          console.log('开始创建Lottie动画');
+          animation = lottie.loadAnimation({
+            container: document.getElementById('lottie-animation'),
+            renderer: 'svg',
+            loop: true,
+            autoplay: true,
+            animationData: lottieData,
+            rendererSettings: {
+              progressiveLoad: false,
+              hideOnTransparent: true
+            }
+          });
+
+          // 7. 注册全局图片加载器
+          window.loadImage = async (path, img) => {
+            try {
+              console.log('加载图片:', path);
+              // 检查是否是 Base64 数据
+              if (path.startsWith('data:')) {
+                img.src = path;
+                return;
+              }
+
+              // 尝试在临时目录中查找图片
+              const allImages = await zipUtil.findAllImages(tempDir, extractedFiles);
+              const imageName = path.substring(path.lastIndexOf('/') + 1);
+              console.log('查找图片:', imageName);
+              const matchedImage = allImages.find(img => img.endsWith(imageName));
+
+              if (matchedImage) {
+                console.log('找到匹配的图片:', matchedImage);
+                const base64 = await loadImageAsBase64(matchedImage);
+                if (base64) {
+                  img.src = base64;
+                  console.log('图片加载成功');
+                }
+              } else {
+                console.warn('未找到匹配的图片:', imageName);
+              }
+            } catch (err) {
+              console.error("加载图片时出错:", err);
+            }
+          };
+
+          // 8. 初始化UI状态
+          isPlaying = true;
+          playIcon.style.display = 'none';
+          pauseIcon.style.display = 'block';
+
+          // 9. 获取动画信息
+          animation.addEventListener('DOMLoaded', () => {
+            console.log('动画DOM加载完成');
+            totalFrames = Math.floor(animation.totalFrames);
+            duration = animation.getDuration();
+
+            console.log('动画信息:', {
+              totalFrames,
+              duration,
+              frameRate: animation.frameRate
+            });
+
+            // 更新信息显示
+            frameCounter.textContent = `0 / ${totalFrames}`;
+            timeDisplay.textContent = `0:00 / ${formatTime(duration)}`;
+
+            // 隐藏加载覆盖层
+            loadingOverlay.style.display = 'none';
+
+            // 动画加载完成后淡出标题区域
+            setTimeout(() => {
+              titleArea.style.opacity = '0';
+              titleArea.style.transition = 'opacity 0.5s';
+            }, 2000);
+          });
+
+          // 监听错误
+          animation.addEventListener('error', (error) => {
+            console.error('Lottie动画错误:', error);
+            showError(`加载 Lottie 动画时出错: ${error.message || "未知错误"}`);
+          });
+
+          // 帧更新事件
+          animation.addEventListener('enterFrame', () => {
+            if (animation.currentFrame !== undefined && animation.totalFrames) {
+              const currentTime = (animation.currentFrame / animation.frameRate);
+              updateProgress(currentTime, duration);
+              updateFrameCounter();
+            }
+          });
+
+        } catch (error) {
+          console.error("加载 Lottie 动画时出错:", error);
+          showError(`加载 Lottie 动画时出错: ${error.message || "未知错误"}`);
+        }
+      }
+
+      // 设置事件监听
+      playPauseBtn.addEventListener('click', togglePlayPause);
+
+      prevFrameBtn.addEventListener('click', () => {
+        if (!animation) return;
+        const newFrame = Math.max(0, animation.currentFrame - 1);
+        animation.goToAndStop(newFrame, true);
+        updateFrameCounter();
+
+        // 如果是播放状态，暂停
+        if (isPlaying) {
+          isPlaying = false;
+          playIcon.style.display = 'block';
+          pauseIcon.style.display = 'none';
+        }
+      });
+
+      nextFrameBtn.addEventListener('click', () => {
+        if (!animation) return;
+        const newFrame = Math.min(totalFrames - 1, animation.currentFrame + 1);
+        animation.goToAndStop(newFrame, true);
+        updateFrameCounter();
+
+        // 如果是播放状态，暂停
+        if (isPlaying) {
+          isPlaying = false;
+          playIcon.style.display = 'block';
+          pauseIcon.style.display = 'none';
+        }
+      });
+
+      speedControlBtn.addEventListener('click', cycleSpeed);
+      fullscreenBtn.addEventListener('click', toggleFullscreen);
+
+      progressContainer.addEventListener('click', (e) => {
+        if (!animation || !duration) return;
+
+        const rect = progressContainer.getBoundingClientRect();
+        const clickPos = (e.clientX - rect.left) / rect.width;
+        const seekFrame = clickPos * totalFrames;
+
+        animation.goToAndStop(seekFrame, true);
+        updateFrameCounter();
+
+        // 更新进度条
+        const currentTime = (seekFrame / animation.frameRate);
+        updateProgress(currentTime, duration);
+      });
+
+      nextButton.addEventListener('click', () => {
+        // 处理下一步按钮点击事件
+        // 这里可以根据需要添加逻辑
+      });
+
+      // 页面卸载时清理临时目录
+      window.addEventListener('beforeunload', () => {
+        if (tempDir) {
+          zipUtil.cleanupTempDir(tempDir);
+        }
+      });
+
+      // 加载动画
+      loadAnimation();
+    });
+  </script>
+</body>
+
+</html>

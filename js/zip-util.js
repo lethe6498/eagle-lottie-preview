@@ -13,6 +13,8 @@ const os = require('os');
  * @returns {Promise<{tempDir: string, files: string[]}>} - 解压后的临时目录路径和文件列表
  */
 async function extractZip(zipPath) {
+  console.log('开始解压文件:', zipPath);
+  
   // 创建临时目录
   const tempDir = path.join(os.tmpdir(), `lottie_zip_${Date.now()}`);
   await fs.promises.mkdir(tempDir, { recursive: true });
@@ -33,6 +35,7 @@ async function extractZip(zipPath) {
       fileBuffer[3] === 0x04;
 
     if (!isZip) {
+      console.log('不是ZIP文件，尝试作为JSON文件处理');
       // 不是ZIP文件，可能是直接的JSON文件
       const destPath = path.join(tempDir, path.basename(zipPath));
       await fs.promises.copyFile(zipPath, destPath);
@@ -40,13 +43,15 @@ async function extractZip(zipPath) {
       return { tempDir, files };
     }
 
-    // 是ZIP文件，尝试使用内置方法解压
+    console.log('检测到ZIP文件，开始解压');
 
-    // 方法1：使用 adm-zip 库（如果可用）
+    // 是ZIP文件，尝试使用内置方法解压
     try {
       const AdmZip = require('adm-zip');
       const zip = new AdmZip(zipPath);
       const zipEntries = zip.getEntries();
+
+      console.log(`找到 ${zipEntries.length} 个文件`);
 
       // 解压所有文件
       zip.extractAllTo(tempDir, true);
@@ -54,68 +59,19 @@ async function extractZip(zipPath) {
       // 收集文件列表
       for (const entry of zipEntries) {
         if (!entry.isDirectory) {
-          files.push(path.join(tempDir, entry.entryName));
+          const filePath = path.join(tempDir, entry.entryName);
+          files.push(filePath);
+          console.log('解压文件:', filePath);
         }
       }
 
       return { tempDir, files };
     } catch (err) {
-      console.log('adm-zip 方法失败，尝试下一种方法');
+      console.error('adm-zip 解压失败:', err);
+      throw new Error(`解压ZIP文件失败: ${err.message}`);
     }
-
-    // 方法2：使用 yauzl 库（如果可用）
-    try {
-      const yauzl = require('yauzl');
-      const util = require('util');
-      const streamPipeline = util.promisify(require('stream').pipeline);
-
-      const openZip = util.promisify((path, options, callback) => {
-        yauzl.open(path, options, callback);
-      });
-
-      const zipFile = await openZip(zipPath, { lazyEntries: true });
-      const readEntry = util.promisify(zipFile.readEntry.bind(zipFile));
-      const openReadStream = util.promisify(zipFile.openReadStream.bind(zipFile));
-
-      zipFile.on('entry', async (entry) => {
-        if (/\/$/.test(entry.fileName)) {
-          // 目录项
-          await fs.promises.mkdir(path.join(tempDir, entry.fileName), { recursive: true });
-          zipFile.readEntry();
-        } else {
-          // 文件项
-          try {
-            const readStream = await openReadStream(entry);
-            const filePath = path.join(tempDir, entry.fileName);
-            await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-            const writeStream = fs.createWriteStream(filePath);
-            await streamPipeline(readStream, writeStream);
-            files.push(filePath);
-            zipFile.readEntry();
-          } catch (err) {
-            console.error(`解压文件 ${entry.fileName} 失败:`, err);
-            zipFile.readEntry();
-          }
-        }
-      });
-
-      zipFile.on('end', () => {
-        zipFile.close();
-      });
-
-      await readEntry();
-      return { tempDir, files };
-    } catch (err) {
-      console.log('yauzl 方法失败，尝试下一种方法');
-    }
-
-    // 方法3：最后的备选方案，直接复制文件
-    const destPath = path.join(tempDir, path.basename(zipPath, '.zip') + '.json');
-    await fs.promises.writeFile(destPath, fileBuffer);
-    files.push(destPath);
-
-    return { tempDir, files };
   } catch (error) {
+    console.error('解压过程出错:', error);
     throw new Error(`解压ZIP文件失败: ${error.message}`);
   }
 }
@@ -245,11 +201,3 @@ module.exports = {
   findAllImages,
   cleanupTempDir
 };
-// 在 zip-util.js 中添加
-async function extractZip(zipPath) {
-  console.log('开始解压文件:', zipPath);
-  // ... 现有代码 ...
-
-  // 在各个尝试解压的方法中添加
-  console.log('提取的文件列表:', files);
-}
