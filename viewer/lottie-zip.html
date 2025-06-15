@@ -369,8 +369,12 @@
       }
 
       // 更新进度条
-      function updateProgress(currentTime, totalTime) {
-        const progress = (currentTime / totalTime) * 100;
+      function updateProgress(currentFrame, totalFrames) {
+        if (totalFrames <= 1) {
+          progressBar.style.width = '100%';
+          return;
+        }
+        const progress = (currentFrame / (totalFrames - 1)) * 100;
         progressBar.style.width = `${progress}%`;
       }
 
@@ -695,8 +699,7 @@
           // 帧更新事件
           animation.addEventListener('enterFrame', () => {
             if (animation.currentFrame !== undefined && animation.totalFrames) {
-              const currentTime = (animation.currentFrame / animation.frameRate);
-              updateProgress(currentTime, duration);
+              updateProgress(animation.currentFrame, totalFrames);
               updateFrameCounter();
             }
           });
@@ -751,8 +754,8 @@
         animation.goToAndStop(seekFrame, true);
         updateFrameCounter();
 
-        const currentTime = (seekFrame / animation.frameRate);
-        updateProgress(currentTime, duration);
+        // 更新进度条
+        updateProgress(seekFrame, totalFrames);
       });
 
       // 窗口大小改变事件
