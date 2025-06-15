@@ -12,7 +12,7 @@
       overflow: hidden;
       width: 100%;
       height: 100%;
-      background-color: #000;
+      background-color: #17181c;
       color: #fff;
       font-family: Arial, sans-serif;
     }
@@ -24,14 +24,20 @@
       align-items: center;
       justify-content: center;
       position: relative;
+      background-color: #17181c;
     }
 
     #lottie-animation {
-      width: 100%;
-      height: 100%;
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
+      background-color: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    #lottie-animation>div {
+      width: 100% !important;
+      height: 100% !important;
     }
 
     #error-message {
@@ -69,7 +75,7 @@
       left: 0;
       right: 0;
       height: 100px;
-      background: rgba(0, 0, 0, 0.5);
+      background: #17181c;
       display: flex;
       flex-direction: column;
     }
@@ -181,6 +187,19 @@
       font-weight: bold;
     }
 
+    #dimensions-info {
+      position: absolute;
+      top: 40px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      padding: 3px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: bold;
+      display: none;
+    }
+
     #loading-overlay {
       position: absolute;
       top: 0;
@@ -232,6 +251,7 @@
   </div>
 
   <div id="zip-badge">ZIP</div>
+  <div id="dimensions-info"></div>
 
   <div id="lottie-container">
     <div id="lottie-animation"></div>
@@ -309,6 +329,9 @@
       const errorMessage = document.getElementById('error-message');
       const titleArea = document.getElementById('title-area');
       const titleElement = document.querySelector('.title');
+      const dimensionsInfo = document.getElementById('dimensions-info');
+      const lottieContainer = document.getElementById('lottie-container');
+      const lottieAnimation = document.getElementById('lottie-animation');
 
       // 动画变量
       let animation = null;
@@ -317,10 +340,44 @@
       let currentFrame = 0;
       let duration = 0;
       let speedMultiplier = 1;
+      let originalWidth = 0;
+      let originalHeight = 0;
 
       // 更新标题
       function updateTitle(filename) {
         titleElement.textContent = filename || 'Lottie 动画';
+      }
+
+      // 更新尺寸信息显示
+      function updateDimensionsInfo() {
+        if (originalWidth && originalHeight) {
+          dimensionsInfo.textContent = `${originalWidth} × ${originalHeight}`;
+          dimensionsInfo.style.display = 'block';
+        }
+      }
+
+      // 计算并设置动画尺寸
+      function resizeAnimation() {
+        if (!originalWidth || !originalHeight) return;
+
+        const containerRect = lottieContainer.getBoundingClientRect();
+        const containerWidth = containerRect.width;
+        const containerHeight = containerRect.height;
+
+        // 计算缩放比例，保持宽高比
+        const scaleX = containerWidth / originalWidth;
+        const scaleY = containerHeight / originalHeight;
+        const scale = Math.min(scaleX, scaleY);
+
+        // 计算最终尺寸
+        const finalWidth = originalWidth * scale;
+        const finalHeight = originalHeight * scale;
+
+        // 设置动画容器尺寸
+        lottieAnimation.style.width = `${finalWidth}px`;
+        lottieAnimation.style.height = `${finalHeight}px`;
+
+        console.log(`动画尺寸调整: ${originalWidth}x${originalHeight} -> ${finalWidth}x${finalHeight} (scale: ${scale})`);
       }
 
       // 格式化时间
@@ -420,7 +477,7 @@
 
       // 查找 Lottie JSON 文件
       function findLottieJsonFile(files) {
-        const jsonFiles = Object.keys(files).filter(filename => 
+        const jsonFiles = Object.keys(files).filter(filename =>
           filename.toLowerCase().endsWith('.json')
         );
 
@@ -475,7 +532,7 @@
 
             // 构建可能的完整路径
             let possiblePaths = [assetPath];
-            
+
             // 如果有 u 属性（通常是 "images/"），组合路径
             if (asset.u) {
               possiblePaths.push(asset.u + assetPath);
@@ -495,9 +552,9 @@
             // 尝试各种可能的路径
             for (const possiblePath of possiblePaths) {
               matchedFile = imageFiles.find(filename => {
-                return filename === possiblePath || 
-                       filename.endsWith('/' + possiblePath) ||
-                       filename.split('/').pop() === possiblePath;
+                return filename === possiblePath ||
+                  filename.endsWith('/' + possiblePath) ||
+                  filename.split('/').pop() === possiblePath;
               });
               if (matchedFile) {
                 console.log('找到匹配文件:', possiblePath, '->', matchedFile);
@@ -579,6 +636,12 @@
           const jsonContent = new TextDecoder().decode(files[jsonFilename]);
           let lottieData = JSON.parse(jsonContent);
 
+          // 获取原始尺寸
+          originalWidth = lottieData.w || 1920;
+          originalHeight = lottieData.h || 1080;
+
+          console.log('动画原始尺寸:', originalWidth, 'x', originalHeight);
+
           console.log('JSON 文件读取成功，开始处理资源');
 
           // 处理外部资源，将图片转换为 base64
@@ -589,6 +652,9 @@
           // 更新标题
           const filename = url.split('/').pop().replace('.zip', '');
           updateTitle(filename);
+
+          // 更新尺寸信息
+          updateDimensionsInfo();
 
           // 创建 Lottie 动画
           animation = lottie.loadAnimation({
@@ -617,8 +683,13 @@
             console.log('动画信息:', {
               totalFrames,
               duration,
-              frameRate: animation.frameRate
+              frameRate: animation.frameRate,
+              originalWidth,
+              originalHeight
             });
+
+            // 调整动画尺寸
+            resizeAnimation();
 
             // 更新信息显示
             frameCounter.textContent = `0 / ${totalFrames}`;
@@ -699,6 +770,13 @@
 
         const currentTime = (seekFrame / animation.frameRate);
         updateProgress(currentTime, duration);
+      });
+
+      // 窗口大小改变事件
+      window.addEventListener('resize', () => {
+        requestAnimationFrame(() => {
+          resizeAnimation();
+        });
       });
 
       // 自动加载

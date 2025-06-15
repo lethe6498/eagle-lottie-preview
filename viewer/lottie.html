@@ -12,7 +12,7 @@
       overflow: hidden;
       width: 100%;
       height: 100%;
-      background-color: #ff0000;
+      background-color: #17181c;
       color: #fff;
       font-family: Arial, sans-serif;
     }
@@ -24,14 +24,20 @@
       align-items: center;
       justify-content: center;
       position: relative;
+      background-color: #17181c;
     }
 
     #lottie-animation {
-      width: 100%;
-      height: 100%;
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
+      background-color: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    #lottie-animation>div {
+      width: 100% !important;
+      height: 100% !important;
     }
 
     #error-message {
@@ -69,7 +75,7 @@
       left: 0;
       right: 0;
       height: 100px;
-      background: rgba(0, 0, 0, 0.5);
+      background: #17181c;
       display: flex;
       flex-direction: column;
     }
@@ -168,6 +174,19 @@
       font-size: 12px;
       color: rgba(255, 255, 255, 0.7);
     }
+
+    #dimensions-info {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      padding: 3px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: bold;
+      display: none;
+    }
   </style>
   <!-- 引入 Lottie 库 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.10.2/lottie.min.js"></script>
@@ -177,9 +196,11 @@
   <div id="title-area">
     <div class="title">data</div>
   </div>
+
+  <div id="dimensions-info"></div>
+
   <div id="lottie-container">
     <div id="lottie-animation"></div>
-  
     <div id="error-message"></div>
   </div>
 
@@ -257,6 +278,9 @@
       const errorMessage = document.getElementById('error-message');
       const titleArea = document.getElementById('title-area');
       const titleElement = document.querySelector('.title');
+      const dimensionsInfo = document.getElementById('dimensions-info');
+      const lottieContainer = document.getElementById('lottie-container');
+      const lottieAnimation = document.getElementById('lottie-animation');
 
       // 动画变量
       let animation = null;
@@ -269,6 +293,8 @@
       let animationData = null;
       let hasExternalImages = false;
       let imagesFolder = '';
+      let originalWidth = 0;
+      let originalHeight = 0;
 
       // Node.js fs 模块，用于读取文件
       const fs = require('fs');
@@ -280,6 +306,38 @@
           const filename = path.basename(filePath, path.extname(filePath));
           titleElement.textContent = filename;
         }
+      }
+
+      // 更新尺寸信息显示
+      function updateDimensionsInfo() {
+        if (originalWidth && originalHeight) {
+          dimensionsInfo.textContent = `${originalWidth} × ${originalHeight}`;
+          dimensionsInfo.style.display = 'block';
+        }
+      }
+
+      // 计算并设置动画尺寸
+      function resizeAnimation() {
+        if (!originalWidth || !originalHeight) return;
+
+        const containerRect = lottieContainer.getBoundingClientRect();
+        const containerWidth = containerRect.width;
+        const containerHeight = containerRect.height;
+
+        // 计算缩放比例，保持宽高比
+        const scaleX = containerWidth / originalWidth;
+        const scaleY = containerHeight / originalHeight;
+        const scale = Math.min(scaleX, scaleY);
+
+        // 计算最终尺寸
+        const finalWidth = originalWidth * scale;
+        const finalHeight = originalHeight * scale;
+
+        // 设置动画容器尺寸
+        lottieAnimation.style.width = `${finalWidth}px`;
+        lottieAnimation.style.height = `${finalHeight}px`;
+
+        console.log(`动画尺寸调整: ${originalWidth}x${originalHeight} -> ${finalWidth}x${finalHeight} (scale: ${scale})`);
       }
 
       // 格式化时间
@@ -478,6 +536,15 @@
           const fileContent = await fs.promises.readFile(filePath, 'utf8');
           let lottieData = JSON.parse(fileContent);
 
+          // 获取原始尺寸
+          originalWidth = lottieData.w || 1920;
+          originalHeight = lottieData.h || 1080;
+
+          console.log('动画原始尺寸:', originalWidth, 'x', originalHeight);
+
+          // 更新尺寸信息
+          updateDimensionsInfo();
+
           // 处理外部资源
           lottieData = await processLottieWithAssets(lottieData, filePath);
 
@@ -563,6 +630,17 @@
             totalFrames = Math.floor(animation.totalFrames);
             duration = animation.getDuration();
 
+            console.log('动画信息:', {
+              totalFrames,
+              duration,
+              frameRate: animation.frameRate,
+              originalWidth,
+              originalHeight
+            });
+
+            // 调整动画尺寸
+            resizeAnimation();
+
             // 更新信息显示
             frameCounter.textContent = `0 / ${totalFrames}`;
             timeDisplay.textContent = `0:00 / ${formatTime(duration)}`;
@@ -640,6 +718,13 @@
         // 更新进度条
         const currentTime = (seekFrame / animation.frameRate);
         updateProgress(currentTime, duration);
+      });
+
+      // 窗口大小改变事件
+      window.addEventListener('resize', () => {
+        requestAnimationFrame(() => {
+          resizeAnimation();
+        });
       });
 
       // 加载动画
