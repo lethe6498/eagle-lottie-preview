@@ -106,9 +106,9 @@
     #frame-counter {
       font-size: 14px;
       color: rgba(255, 255, 255, 0.7);
-      min-width: 40px;
-      text-align: right;
-      /* background: rgba(255, 255, 255, 0.1); */
+      min-width: 60px;
+      text-align: center;
+      /* background: rgba(255, 255, 255, 0.1);  */
       padding: 3px 8px;
       border-radius: 10px;
       font-size: 12px;
@@ -219,6 +219,20 @@
         transform: rotate(360deg);
       }
     }
+
+    /* 键盘提示 */
+   /*  #keyboard-hint {
+      position: absolute;
+      bottom: 110px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      color: rgba(255, 255, 255, 0.6);
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 11px;
+      display: none;
+      z-index: 50;
+    } */
   </style>
   <!-- 引入 Lottie 库 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.10.2/lottie.min.js"></script>
@@ -238,6 +252,7 @@
 
   <div id="zip-badge">ZIP</div>
   <div id="dimensions-info"></div>
+<!--   <div id="keyboard-hint">← → 控制帧</div> -->
 
   <div id="lottie-container">
     <div id="lottie-animation"></div>
@@ -313,6 +328,7 @@
       const dimensionsInfo = document.getElementById('dimensions-info');
       const lottieContainer = document.getElementById('lottie-container');
       const lottieAnimation = document.getElementById('lottie-animation');
+      const keyboardHint = document.getElementById('keyboard-hint');
 
       // 动画变量
       let animation = null;
@@ -323,6 +339,43 @@
       let speedMultiplier = 1;
       let originalWidth = 0;
       let originalHeight = 0;
+
+      // 更新进度条
+      let lastProgress = 0;
+      let lastUpdateTime = 0;
+      const MIN_UPDATE_INTERVAL = 16; // 约60fps的更新间隔
+
+      function updateProgress(currentFrame, totalFrames) {
+        if (!totalFrames || totalFrames <= 1) {
+          progressBar.style.width = '100%';
+          return;
+        }
+        
+        // 确保currentFrame在有效范围内
+        currentFrame = Math.max(0, Math.min(currentFrame, totalFrames - 1));
+        
+        // 计算当前进度
+        const currentProgress = (currentFrame / (totalFrames - 1)) * 100;
+        
+        // 获取当前时间
+        const now = performance.now();
+        
+        // 使用requestAnimationFrame来平滑更新进度条
+        requestAnimationFrame(() => {
+          // 检查是否需要更新（基于时间间隔）
+          if (now - lastUpdateTime >= MIN_UPDATE_INTERVAL) {
+            // 计算平滑过渡的进度
+            const smoothProgress = lastProgress + (currentProgress - lastProgress) * 0.3;
+            
+            // 更新进度条
+            progressBar.style.width = `${smoothProgress}%`;
+            
+            // 更新最后的值
+            lastProgress = smoothProgress;
+            lastUpdateTime = now;
+          }
+        });
+      }
 
       // 更新标题
       function updateTitle(filename) {
@@ -368,16 +421,6 @@
         return `${mins}:${secs}`;
       }
 
-      // 更新进度条
-      function updateProgress(currentFrame, totalFrames) {
-        if (totalFrames <= 1) {
-          progressBar.style.width = '100%';
-          return;
-        }
-        const progress = (currentFrame / (totalFrames - 1)) * 100;
-        progressBar.style.width = `${progress}%`;
-      }
-
       // 更新帧计数器
       function updateFrameCounter() {
         if (animation && totalFrames > 0) {
@@ -385,6 +428,36 @@
           // 显示帧数从1开始，而不是0
           const displayFrame = currentFrame + 1;
           frameCounter.textContent = `${displayFrame} / ${totalFrames}`;
+        }
+      }
+
+      // 上一帧功能
+      function gotoPrevFrame() {
+        if (!animation) return;
+        const newFrame = Math.max(0, animation.currentFrame - 1);
+        animation.goToAndStop(newFrame, true);
+        updateFrameCounter();
+
+        if (isPlaying) {
+          isPlaying = false;
+          playIcon.style.display = 'block';
+          pauseIcon.style.display = 'none';
+        }
+      }
+
+      // 下一帧功能
+      function gotoNextFrame() {
+        if (!animation) return;
+        // 修复：允许到达最后一帧（totalFrames - 1）
+        const maxFrame = totalFrames - 1;
+        const newFrame = Math.min(maxFrame, Math.floor(animation.currentFrame) + 1);
+        animation.goToAndStop(newFrame, true);
+        updateFrameCounter();
+
+        if (isPlaying) {
+          isPlaying = false;
+          playIcon.style.display = 'block';
+          pauseIcon.style.display = 'none';
         }
       }
 
@@ -683,11 +756,16 @@
             // 隐藏加载覆盖层
             loadingOverlay.style.display = 'none';
 
-            // 动画加载完成后淡出标题区域
+            // 显示键盘提示
+            keyboardHint.style.display = 'block';
+
+            // 动画加载完成后淡出标题区域和键盘提示
             setTimeout(() => {
               titleArea.style.opacity = '0';
               titleArea.style.transition = 'opacity 0.5s';
-            }, 2000);
+              keyboardHint.style.opacity = '0.3';
+              keyboardHint.style.transition = 'opacity 0.5s';
+            }, 3000);
           });
 
           // 监听错误
@@ -710,37 +788,32 @@
         }
       }
 
+      // 键盘事件监听
+      document.addEventListener('keydown', function (event) {
+        // 只在动画加载完成后响应键盘事件
+        if (!animation || totalFrames <= 0) return;
+
+        switch (event.key) {
+          case 'ArrowLeft':
+            event.preventDefault();
+            gotoPrevFrame();
+            break;
+          case 'ArrowRight':
+            event.preventDefault();
+            gotoNextFrame();
+            break;
+          case ' ':
+          case 'Spacebar':
+            event.preventDefault();
+            togglePlayPause();
+            break;
+        }
+      });
+
       // 设置事件监听
       playPauseBtn.addEventListener('click', togglePlayPause);
-
-      prevFrameBtn.addEventListener('click', () => {
-        if (!animation) return;
-        const newFrame = Math.max(0, animation.currentFrame - 1);
-        animation.goToAndStop(newFrame, true);
-        updateFrameCounter();
-
-        if (isPlaying) {
-          isPlaying = false;
-          playIcon.style.display = 'block';
-          pauseIcon.style.display = 'none';
-        }
-      });
-
-      nextFrameBtn.addEventListener('click', () => {
-        if (!animation) return;
-        // 修复：允许到达最后一帧（totalFrames - 1）
-        const maxFrame = totalFrames - 1;
-        const newFrame = Math.min(maxFrame, Math.floor(animation.currentFrame) + 1);
-        animation.goToAndStop(newFrame, true);
-        updateFrameCounter();
-
-        if (isPlaying) {
-          isPlaying = false;
-          playIcon.style.display = 'block';
-          pauseIcon.style.display = 'none';
-        }
-      });
-
+      prevFrameBtn.addEventListener('click', gotoPrevFrame);
+      nextFrameBtn.addEventListener('click', gotoNextFrame);
       speedControlBtn.addEventListener('click', cycleSpeed);
       fullscreenBtn.addEventListener('click', toggleFullscreen);
 
