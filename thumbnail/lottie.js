@@ -1,88 +1,210 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
-const util = require('util');
-const exec = util.promisify(require('child_process').exec);
 
 /**
- * 使用7z解压ZIP文件到临时目录
- * @param {string} zipPath - ZIP文件路径
- * @returns {Promise<string>} - 解压后的临时目录路径
+ * 使用logo.png作为缩略图
  */
-async function extractZip(zipPath) {
+function generateLogoThumbnail(width, height, metadata) {
     try {
-        // 创建临时目录
-        const tempDir = path.join(os.tmpdir(), `lottie_extract_${Date.now()}`);
-        await fs.promises.mkdir(tempDir, { recursive: true });
+        // 尝试使用Canvas处理logo
+        const { createCanvas, loadImage } = require('canvas');
+        
+        // 计算缩略图尺寸
+        const aspectRatio = width / height;
+        let canvasWidth = 400;
+        let canvasHeight = Math.round(canvasWidth / aspectRatio);
+        
+        if (canvasHeight > 400) {
+            canvasHeight = 400;
+            canvasWidth = Math.round(canvasHeight * aspectRatio);
+        }
+        
+        const canvas = createCanvas(canvasWidth, canvasHeight);
+        const ctx = canvas.getContext('2d');
+        
+        // 读取logo.png
+        const logoPath = path.join(__dirname, '../logo.png');
+        if (fs.existsSync(logoPath)) {
+            // 异步加载logo并生成缩略图
+            return loadImage(logoPath).then(logo => {
+                // 清除画布
+                ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+                
+                // 创建指定的渐变背景 linear-gradient(179.14deg, #1D003D -21.15%, #000000 106.35%)
+                // 179.14度几乎是垂直渐变，从上到下
+                const gradient = ctx.createLinearGradient(0, 0, 0, canvasHeight);
+                gradient.addColorStop(0, '#1D003D'); // 深紫色
+                gradient.addColorStop(1, '#000000'); // 黑色
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+                
 
-        // 使用7z解压ZIP文件
-        await exec(`7z x "${zipPath}" -o"${tempDir}" -y`);
+                // 计算logo居中位置和大小
+                const logoSize = Math.min(canvasWidth, canvasHeight) * 0.7;
+                const logoX = (canvasWidth - logoSize) / 2;
+                const logoY = (canvasHeight - logoSize) / 2;
 
-        return tempDir;
+                // 绘制logo (完全居中，保持宽高比)
+                const logoAspect = logo.width / logo.height;
+                let drawWidth = maxLogoSize;
+                let drawHeight = maxLogoSize / logoAspect;
+                
+                if (drawHeight > maxLogoSize) {
+                    drawHeight = maxLogoSize;
+                    drawWidth = maxLogoSize * logoAspect;
+                }
+                
+                const drawX = centerX - drawWidth / 2;
+                const drawY = centerY - drawHeight / 2;
+                
+                ctx.drawImage(logo, drawX, drawY, drawWidth, drawHeight);
+                
+                // 添加信息文字区域（深色背景适配）
+                const infoY = canvasHeight - 40;
+                ctx.fillStyle = 'rgba(29, 0, 61, 0.8)'; // 使用深紫色半透明背景
+                ctx.fillRect(10, infoY, canvasWidth - 20, 30);
+                
+                ctx.fillStyle = 'white'; // 白色文字在深色背景上
+                ctx.font = `${Math.max(12, canvasWidth / 30)}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.fillText(metadata.name || 'Lottie Animation', canvasWidth / 2, infoY + 20);
+                
+                return canvas.toBuffer('image/png');
+            });
+        } else {
+            console.log('Logo文件不存在，使用备选方案');
+            return Promise.resolve(generateFallbackWithLogo(canvasWidth, canvasHeight, metadata));
+        }
+        
     } catch (error) {
-        throw new Error(`解压ZIP文件失败: ${error.message}`);
+        console.log('Canvas不可用，使用简单logo方案:', error.message);
+        return Promise.resolve(generateSimpleLogoFallback());
     }
 }
 
 /**
- * 在目录中查找Lottie JSON文件
- * @param {string} dirPath - 目录路径
- * @returns {Promise<string>} - Lottie JSON文件路径
+ * 使用Canvas但没有logo文件时的备选方案
  */
-async function findLottieJsonFile(dirPath) {
+function generateFallbackWithLogo(canvasWidth, canvasHeight, metadata) {
     try {
-        // 读取目录内容
-        const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
-
-        // 先查找直接的JSON文件
-        for (const entry of entries) {
-            if (entry.isFile() && entry.name.endsWith('.json')) {
-                const filePath = path.join(dirPath, entry.name);
-                // 检查是否为Lottie文件
-                if (await isLottieFile(filePath)) {
-                    return filePath;
-                }
-            }
-        }
-
-        // 如果没有找到，递归查找子目录
-        for (const entry of entries) {
-            if (entry.isDirectory()) {
-                const subDirPath = path.join(dirPath, entry.name);
-                try {
-                    const result = await findLottieJsonFile(subDirPath);
-                    if (result) return result;
-                } catch (e) {
-                    // 忽略子目录错误，继续查找其他目录
-                }
-            }
-        }
-
-        throw new Error('未在ZIP文件中找到Lottie JSON文件');
+        const { createCanvas } = require('canvas');
+        const canvas = createCanvas(canvasWidth, canvasHeight);
+        const ctx = canvas.getContext('2d');
+        
+        // 指定的深色渐变背景
+        ctx.fillStyle = '#1D003D';
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+        
+        // 添加渐变效果
+        const gradient = ctx.createLinearGradient(0, 0, 0, canvasHeight);
+        gradient.addColorStop(0, '#1D003D');
+        gradient.addColorStop(1, '#000000');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+        
+        // 绘制Lottie文字logo
+        const centerX = canvasWidth / 2;
+        const centerY = canvasHeight / 2;
+        
+        // 大字体Lottie (白色文字)
+        ctx.fillStyle = 'white';
+        ctx.font = `bold ${Math.max(40, canvasWidth / 10)}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.fillText('Lottie', centerX, centerY - 10);
+        
+        // 小装饰 (紫色点)
+        ctx.beginPath();
+        ctx.arc(centerX, centerY + 20, 3, 0, 2 * Math.PI);
+        ctx.fillStyle = '#8B5CF6'; // 紫色装饰
+        ctx.fill();
+        
+        // 信息文字区域（深色背景适配）
+        const infoY = canvasHeight - 40;
+        ctx.fillStyle = 'rgba(29, 0, 61, 0.8)';
+        ctx.fillRect(10, infoY, canvasWidth - 20, 30);
+        
+        ctx.fillStyle = 'white';
+        ctx.font = `${Math.max(12, canvasWidth / 30)}px Arial`;
+        ctx.fillText(metadata.name || 'Lottie Animation', centerX, infoY + 20);
+        
+        return canvas.toBuffer('image/png');
+        
     } catch (error) {
-        throw error;
+        return generateSimpleLogoFallback();
     }
 }
 
 /**
- * 检查一个JSON文件是否是Lottie动画文件
- * @param {string} filePath - JSON文件路径
- * @returns {Promise<boolean>} - 是否为Lottie文件
+ * 直接读取logo.png文件作为缩略图
+ */
+function readLogoDirectly() {
+    try {
+        const logoPath = path.join(__dirname, '../logo.png');
+        if (fs.existsSync(logoPath)) {
+            console.log('✓ 直接使用logo.png作为缩略图');
+            return fs.readFileSync(logoPath);
+        }
+    } catch (error) {
+        console.log('读取logo.png失败:', error.message);
+    }
+    return null;
+}
+
+/**
+ * 最简单的备选方案
+ */
+function generateSimpleLogoFallback() {
+    // 一个简单的白色PNG，中间有"Lottie"文字效果
+    const pngData = Buffer.from([
+        // PNG signature
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+        
+        // IHDR chunk (400x300, 8-bit RGB)
+        0x00, 0x00, 0x00, 0x0D, 
+        0x49, 0x48, 0x44, 0x52, 
+        0x00, 0x00, 0x01, 0x90, // width = 400
+        0x00, 0x00, 0x01, 0x2C, // height = 300
+        0x08, 0x02, 0x00, 0x00, 0x00, 
+        0x25, 0x15, 0x5D, 0x00, 
+        
+        // IDAT chunk (白色背景)
+        0x00, 0x00, 0x00, 0x4F, 
+        0x49, 0x44, 0x41, 0x54, 
+        0x78, 0x9C, 0xED, 0xC1, 0x01, 0x01, 0x00, 0x00,
+        0x00, 0x80, 0x90, 0xFE, 0xAF, 0x6E, 0x48, 0x40,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x5D, 0x60, 0x08, 0x91, 
+        
+        // IEND chunk
+        0x00, 0x00, 0x00, 0x00, 
+        0x49, 0x45, 0x4E, 0x44, 
+        0xAE, 0x42, 0x60, 0x82  
+    ]);
+    
+    return pngData;
+}
+
+/**
+ * 检查是否为Lottie文件
  */
 async function isLottieFile(filePath) {
     try {
-        // 读取并解析JSON文件
         const data = JSON.parse(await fs.promises.readFile(filePath, 'utf8'));
-
-        // 检查Lottie文件的特征属性
         return (
-            data.v !== undefined && // 版本
-            data.ip !== undefined && // 入点
-            data.op !== undefined && // 出点
-            data.fr !== undefined && // 帧率
-            (data.w !== undefined || data.width !== undefined) && // 宽度
-            (data.h !== undefined || data.height !== undefined) && // 高度
-            data.layers !== undefined // 图层数组
+            data.v !== undefined && 
+            data.ip !== undefined && 
+            data.op !== undefined && 
+            data.fr !== undefined && 
+            (data.w !== undefined || data.width !== undefined) && 
+            (data.h !== undefined || data.height !== undefined) && 
+            data.layers !== undefined
         );
     } catch (error) {
         return false;
@@ -90,253 +212,94 @@ async function isLottieFile(filePath) {
 }
 
 /**
- * 从Lottie文件中提取元数据
- * @param {string} filePath - Lottie文件路径
- * @returns {Promise<Object>} - 元数据对象
- */
-async function getLottieMetadata(filePath) {
-    try {
-        const data = JSON.parse(await fs.promises.readFile(filePath, 'utf8'));
-
-        // 提取基本元数据
-        const width = data.w || data.width || 512;
-        const height = data.h || data.height || 512;
-        const frameRate = data.fr || 30;
-        const inPoint = data.ip || 0;
-        const outPoint = data.op || 0;
-        const duration = (outPoint - inPoint) / frameRate;
-        const hasAssets = data.assets && data.assets.some(a => a.p && (a.u || a.p.includes('.')));
-
-        // 提取名称信息
-        let name = path.basename(filePath, '.json');
-        if (data.nm) {
-            name = data.nm;
-        }
-
-        // 判断是否有外部图片
-        const jsonDir = path.dirname(filePath);
-        const imagesDir = path.join(jsonDir, 'images');
-        const hasImagesFolder = fs.existsSync(imagesDir);
-
-        return {
-            width,
-            height,
-            frameRate,
-            inPoint,
-            outPoint,
-            duration,
-            totalFrames: outPoint - inPoint,
-            version: data.v,
-            name,
-            hasAssets,
-            hasImagesFolder,
-            isZip: true
-        };
-    } catch (error) {
-        throw new Error(`提取Lottie元数据失败: ${error.message}`);
-    }
-}
-
-/**
- * 从Lottie文件中提取第一帧作为预览图
- * 使用JSON数据内容创建预览图
- */
-function createLottiePreviewFromJSON(lottieData, metadata, filename) {
-    const { width, height, duration, frameRate, totalFrames } = metadata;
-
-    // 计算长宽比，确保SVG尺寸合适
-    const aspectRatio = width / height;
-    let svgWidth = 400;
-    let svgHeight = Math.round(svgWidth / aspectRatio);
-
-    // 如果高度太大，则按高度调整
-    if (svgHeight > 400) {
-        svgHeight = 400;
-        svgWidth = Math.round(svgHeight * aspectRatio);
-    }
-
-    // 从Lottie数据创建JSON预览
-    // 提取最多500个字符的JSON内容作为背景
-    const jsonPreview = JSON.stringify(lottieData, null, 2).slice(0, 500);
-    const jsonLines = jsonPreview.split('\n');
-
-    // 创建带有JSON内容的SVG
-    const svgContent = `
-    <svg width="${svgWidth}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-            <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#1e293b" />
-                <stop offset="100%" stop-color="#0f172a" />
-            </linearGradient>
-            <style>
-                .code-text {
-                    font-family: 'Courier New', monospace;
-                    font-size: 10px;
-                    fill: #94a3b8;
-                }
-                .highlight {
-                    fill: #38bdf8;
-                }
-                .string {
-                    fill: #a5f3fc;
-                }
-                .number {
-                    fill: #fb7185;
-                }
-                .boolean {
-                    fill: #fb923c;
-                }
-                .key {
-                    fill: #a5b4fc;
-                }
-                .punctuation {
-                    fill: #e2e8f0;
-                }
-                .info-text {
-                    font-family: Arial, sans-serif;
-                    font-size: 12px;
-                    fill: #94a3b8;
-                }
-                .title-text {
-                    font-family: Arial, sans-serif;
-                    font-size: 14px;
-                    font-weight: bold;
-                    fill: #f1f5f9;
-                }
-                .container {
-                    opacity: 0.9;
-                }
-                @keyframes pulse {
-                    0% { opacity: 0.4; }
-                    50% { opacity: 0.8; }
-                    100% { opacity: 0.4; }
-                }
-                .animated-layer {
-                    animation: pulse 2s infinite ease-in-out;
-                }
-                .zip-badge {
-                    font-family: Arial, sans-serif;
-                    font-size: 10px;
-                    font-weight: bold;
-                    fill: white;
-                }
-                .zip-badge-bg {
-                    fill: #2563eb;
-                }
-            </style>
-        </defs>
-        
-        <!-- 背景 -->
-        <rect width="100%" height="100%" rx="8" fill="url(#bg-gradient)"/>
-        
-        <!-- JSON预览文本 - 主要内容 -->
-        <g class="container" transform="translate(10, 30)">
-            ${jsonLines.map((line, i) => {
-        // 为不同类型的内容添加颜色高亮
-        const highlightedLine = line
-            .replace(/("[^"]*")/g, '<tspan class="string">$1</tspan>')
-            .replace(/\b(\d+)\b/g, '<tspan class="number">$1</tspan>')
-            .replace(/\b(true|false)\b/g, '<tspan class="boolean">$1</tspan>')
-            .replace(/(".*?"):/g, '<tspan class="key">$1</tspan>:')
-            .replace(/([{}[\],])/g, '<tspan class="punctuation">$1</tspan>');
-
-        return `<text x="0" y="${i * 12}" class="code-text animated-layer">${highlightedLine}</text>`;
-    }).join('')}
-        </g>
-        
-        <!-- 动画信息覆盖层 -->
-        <rect x="10" y="${svgHeight - 60}" width="${svgWidth - 20}" height="45" rx="5" fill="rgba(15, 23, 42, 0.8)" />
-        
-        <!-- 标题 -->
-        <g transform="translate(${svgWidth / 2}, ${svgHeight - 45})">
-            <text class="title-text" text-anchor="middle">
-                ${filename || 'Lottie Animation'}
-            </text>
-        </g>
-        
-        <!-- 底部的信息展示 -->
-        <g transform="translate(${svgWidth / 2}, ${svgHeight - 25})">
-            <text class="info-text" text-anchor="middle">
-                ${width}×${height} • ${Math.round(duration * 10) / 10}s • ${Math.round(frameRate)}fps • ${totalFrames}帧
-            </text>
-        </g>
-        
-        <!-- ZIP 标记 -->
-        <g transform="translate(${svgWidth - 50}, 22)">
-            <rect class="zip-badge-bg" x="0" y="-15" width="40" height="18" rx="9" />
-            <text x="20" y="0" class="zip-badge" text-anchor="middle">ZIP</text>
-        </g>
-    </svg>`;
-
-    return svgContent;
-}
-
-/**
- * 清理临时目录
- * @param {string} tempDir - 临时目录路径
- */
-async function cleanupTempDir(tempDir) {
-    try {
-        if (tempDir && fs.existsSync(tempDir)) {
-            await fs.promises.rm(tempDir, { recursive: true, force: true });
-        }
-    } catch (error) {
-        console.error(`清理临时目录失败: ${error.message}`);
-    }
-}
-
-/**
- * ZIP格式Lottie缩略图生成器
+ * 主函数
  */
 module.exports = async ({ src, dest, item }) => {
-    let tempDir = null;
+    return new Promise(async (resolve, reject) => {
+        try {
+            console.log('=== Logo版Lottie处理器 ===');
+            console.log('源文件:', src);
+            console.log('目标文件:', dest);
+            
+            // 1. 验证文件
+            if (!await isLottieFile(src)) {
+                return reject(new Error('不是有效的Lottie文件'));
+            }
+            console.log('✓ Lottie文件验证通过');
 
-    try {
-        // 1. 解压ZIP文件
-        tempDir = await extractZip(src);
-
-        // 2. 在解压后的目录中查找Lottie JSON文件
-        const lottieJsonPath = await findLottieJsonFile(tempDir);
-
-        // 3. 读取Lottie数据
-        const lottieData = JSON.parse(await fs.promises.readFile(lottieJsonPath, 'utf8'));
-
-        // 4. 提取Lottie元数据
-        const metadata = await getLottieMetadata(lottieJsonPath);
-
-        // 5. 获取文件名（使用ZIP文件名）
-        const filename = path.basename(src, '.zip');
-
-        // 6. 创建基于JSON内容的SVG缩略图，标记为ZIP
-        const svgContent = createLottiePreviewFromJSON(lottieData, metadata, filename);
-
-        // 7. 将SVG保存为缩略图
-        await fs.promises.writeFile(dest, Buffer.from(svgContent));
-
-        // 8. 更新项目尺寸和其他信息
-        item.height = metadata.height;
-        item.width = metadata.width;
-        item.lottie = {
-            ...metadata,
-            duration: `${Math.round(metadata.duration * 100) / 100}秒`,
-            frameRate: `${metadata.frameRate}fps`,
-            totalFrames: metadata.totalFrames,
-            isZip: true,
-            extractedJsonPath: lottieJsonPath,
-            extractDir: tempDir
-        };
-
-        // 9. 存储解压路径到item（这样viewer可以使用）
-        item.zipExtract = {
-            tempDir,
-            lottieJsonPath
-        };
-
-        // 10. 返回更新后的项目
-        return item;
-    } catch (error) {
-        // 出错时清理临时目录
-        await cleanupTempDir(tempDir);
-        throw error;
-    }
+            // 2. 读取Lottie数据
+            const lottieData = JSON.parse(await fs.promises.readFile(src, 'utf8'));
+            
+            // 3. 提取信息
+            const width = lottieData.w || lottieData.width || 512;
+            const height = lottieData.h || lottieData.height || 512;
+            const frameRate = lottieData.fr || 30;
+            const inPoint = lottieData.ip || 0;
+            const outPoint = lottieData.op || 0;
+            const duration = (outPoint - inPoint) / frameRate;
+            const name = lottieData.nm || path.basename(src, '.json');
+            
+            const metadata = {
+                width, height, frameRate, duration, name,
+                totalFrames: outPoint - inPoint
+            };
+            
+            console.log(`Lottie信息: ${width}x${height}, ${duration}s, ${frameRate}fps`);
+            
+            // 4. 确保目录存在
+            const dir = path.dirname(dest);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            
+            // 5. 尝试直接使用logo.png
+            let pngBuffer = readLogoDirectly();
+            
+            if (!pngBuffer) {
+                // 6. 如果没有logo.png，生成包含logo的缩略图
+                console.log('生成Logo缩略图...');
+                const result = generateLogoThumbnail(width, height, metadata);
+                
+                if (result instanceof Promise) {
+                    pngBuffer = await result;
+                } else {
+                    pngBuffer = result;
+                }
+            }
+            
+            console.log(`PNG数据大小: ${pngBuffer.length} bytes`);
+            
+            // 7. 写入文件
+            fs.writeFileSync(dest, pngBuffer);
+            console.log('✓ Logo PNG文件已创建');
+            
+            // 8. 检查结果
+            if (!fs.existsSync(dest)) {
+                return reject(new Error('logo thumbnail generate fail.'));
+            }
+            
+            const stats = fs.statSync(dest);
+            if (stats.size === 0) {
+                return reject(new Error('logo thumbnail generate fail.'));
+            }
+            
+            console.log(`✓ 文件验证成功，大小: ${stats.size} bytes`);
+            
+            // 9. 更新item信息
+            item.height = height;
+            item.width = width;
+            item.lottie = {
+                ...metadata,
+                duration: `${Math.round(duration * 100) / 100}秒`,
+                frameRate: `${frameRate}fps`,
+                thumbnailType: 'logo'
+            };
+            
+            return resolve(item);
+            
+        } catch (err) {
+            console.error('❌ Logo Lottie处理错误:', err);
+            return reject(err);
+        }
+    });
 };
