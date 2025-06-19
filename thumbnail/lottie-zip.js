@@ -32,7 +32,7 @@ function generateZipLogoThumbnail(width, height, metadata, filename) {
                 // 清除画布
                 ctx.clearRect(0, 0, canvasWidth, canvasHeight);
                 
-                // 创建指定的渐变背景 linear-gradient(179.14deg, #1D003D -21.15%, #000000 106.35%)
+                创建指定的渐变背景 linear-gradient(179.14deg, #1D003D -21.15%, #000000 106.35%)
                 const gradient = ctx.createLinearGradient(0, 0, 0, canvasHeight);
                 gradient.addColorStop(0, '#1D003D'); // 深紫色
                 gradient.addColorStop(1, '#000000'); // 黑色

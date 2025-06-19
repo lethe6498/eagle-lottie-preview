@@ -1,17 +1,19 @@
 {
     "id": "b27b746f-9ff6-4c59-b4a3-a689d43a9cd1",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "platform": "all",
     "arch": "all",
     "name": "Lottie 预览",
-    "description": "支持 Lottie 动画格式的预览插件，包括带外部图片资源的 Lottie 文件和ZIP包",
+    "description": "支持 Lottie 动画格式的预览插件，使用自定义logo作为缩略图，包括带外部图片资源的 Lottie 文件和ZIP包",
     "logo": "/logo.png",
     "keywords": [
         "lottie",
         "animation",
         "json",
         "zip",
-        "动画"
+        "动画",
+        "logo",
+        "thumbnail"
     ],
     "devTools": false,
     "dependencies": {
