@@ -345,16 +345,16 @@ function generateBeautifulZipLottiePreview(lottieData, width, height, metadata =
         const analysis = analyzeLottieData(lottieData);
         console.log('ZIP Lottie分析结果:', analysis);
 
-        // 创建深色渐变背景（ZIP版本稍有不同）
+        // 创建深色渐变背景（与普通版本保持一致）
         const backgroundGradient = ctx.createLinearGradient(0, 0, 0, height);
-        backgroundGradient.addColorStop(0, '#1e1b4b'); // 深紫蓝色
+        backgroundGradient.addColorStop(0, '#1D003D'); // 深紫色
         backgroundGradient.addColorStop(1, '#000000');
         ctx.fillStyle = backgroundGradient;
         ctx.fillRect(0, 0, width, height);
 
         // 如果有分析出的颜色，添加色彩覆盖层
         if (analysis.dominantColors.length > 0) {
-            ctx.globalAlpha = 0.15;
+            ctx.globalAlpha = 0.1;
             const colorOverlay = ctx.createRadialGradient(
                 width / 2, height / 2, 0,
                 width / 2, height / 2, Math.max(width, height) / 2
@@ -498,7 +498,7 @@ function generateBasicZipPreview(width, height, metadata) {
         const ctx = canvas.getContext('2d');
 
         const gradient = ctx.createLinearGradient(0, 0, 0, height);
-        gradient.addColorStop(0, '#1e1b4b');
+        gradient.addColorStop(0, '#1D003D');
         gradient.addColorStop(1, '#000000');
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, width, height);
