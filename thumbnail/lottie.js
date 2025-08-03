@@ -112,6 +112,9 @@ async function generateBeautifulLottiePreview(lottieData, width, height, metadat
         const { createCanvas } = require('canvas');
         const canvas = createCanvas(width, height);
         const ctx = canvas.getContext('2d');
+        
+        // 添加roundRect polyfill
+        addRoundRectPolyfill();
 
         // 创建深色渐变背景（与ZIP版本保持一致）
         const backgroundGradient = ctx.createLinearGradient(0, 0, 0, height);
@@ -144,28 +147,31 @@ async function generateBeautifulLottiePreview(lottieData, width, height, metadat
 /**
  * Canvas的roundRect polyfill
  */
-if (!CanvasRenderingContext2D.prototype.roundRect) {
-    CanvasRenderingContext2D.prototype.roundRect = function (x, y, width, height, radius) {
-        if (typeof radius === 'number') {
-            radius = { tl: radius, tr: radius, br: radius, bl: radius };
-        } else {
-            radius = { ...{ tl: 0, tr: 0, br: 0, bl: 0 }, ...radius };
-        }
+function addRoundRectPolyfill() {
+    const { CanvasRenderingContext2D } = require('canvas');
+    if (!CanvasRenderingContext2D.prototype.roundRect) {
+        CanvasRenderingContext2D.prototype.roundRect = function (x, y, width, height, radius) {
+            if (typeof radius === 'number') {
+                radius = { tl: radius, tr: radius, br: radius, bl: radius };
+            } else {
+                radius = { ...{ tl: 0, tr: 0, br: 0, bl: 0 }, ...radius };
+            }
 
-        this.beginPath();
-        this.moveTo(x + radius.tl, y);
-        this.lineTo(x + width - radius.tr, y);
-        this.quadraticCurveTo(x + width, y, x + width, y + radius.tr);
-        this.lineTo(x + width, y + height - radius.br);
-        this.quadraticCurveTo(x + width, y + height, x + width - radius.br, y + height);
-        this.lineTo(x + radius.bl, y + height);
-        this.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
-        this.lineTo(x, y + radius.tl);
-        this.quadraticCurveTo(x, y, x + radius.tl, y);
-        this.closePath();
+            this.beginPath();
+            this.moveTo(x + radius.tl, y);
+            this.lineTo(x + width - radius.tr, y);
+            this.quadraticCurveTo(x + width, y, x + width, y + radius.tr);
+            this.lineTo(x + width, y + height - radius.br);
+            this.quadraticCurveTo(x + width, y + height, x + width - radius.br, y + height);
+            this.lineTo(x + radius.bl, y + height);
+            this.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
+            this.lineTo(x, y + radius.tl);
+            this.quadraticCurveTo(x, y, x + radius.tl, y);
+            this.closePath();
 
-        return this;
-    };
+            return this;
+        };
+    }
 }
 
 /**
@@ -176,6 +182,9 @@ function generateBasicPreview(width, height, metadata) {
         const { createCanvas } = require('canvas');
         const canvas = createCanvas(width, height);
         const ctx = canvas.getContext('2d');
+        
+        // 添加roundRect polyfill
+        addRoundRectPolyfill();
 
         // 深色渐变背景
         const gradient = ctx.createLinearGradient(0, 0, 0, height);
