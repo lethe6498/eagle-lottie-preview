@@ -379,10 +379,6 @@
         let originalHeight = 0;
 
         // 更新进度条
-        let lastProgress = 0;
-        let lastUpdateTime = 0;
-        const MIN_UPDATE_INTERVAL = 16; // 约60fps的更新间隔
-
         function updateProgress(currentFrame, totalFrames) {
           if (!totalFrames || totalFrames <= 1) {
             progressBar.style.width = "100%";
@@ -392,28 +388,11 @@
           // 确保currentFrame在有效范围内
           currentFrame = Math.max(0, Math.min(currentFrame, totalFrames - 1));
 
-          // 计算当前进度
+          // 计算当前进度 - 直接更新，不使用平滑过渡
           const currentProgress = (currentFrame / (totalFrames - 1)) * 100;
 
-          // 获取当前时间
-          const now = performance.now();
-
-          // 使用requestAnimationFrame来平滑更新进度条
-          requestAnimationFrame(() => {
-            // 检查是否需要更新（基于时间间隔）
-            if (now - lastUpdateTime >= MIN_UPDATE_INTERVAL) {
-              // 计算平滑过渡的进度
-              const smoothProgress =
-                lastProgress + (currentProgress - lastProgress) * 0.3;
-
-              // 更新进度条
-              progressBar.style.width = `${smoothProgress}%`;
-
-              // 更新最后的值
-              lastProgress = smoothProgress;
-              lastUpdateTime = now;
-            }
-          });
+          // 直接更新进度条，确保与帧率同步
+          progressBar.style.width = `${currentProgress}%`;
         }
 
         // 更新标题

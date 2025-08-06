@@ -386,29 +386,47 @@ module.exports = async ({ src, dest, item }) => {
       await fs.promises.readFile(lottieJsonPath, "utf8")
     );
 
-    const width = lottieData.w || lottieData.width || 512;
-    const height = lottieData.h || lottieData.height || 512;
+    const originalWidth = lottieData.w || lottieData.width || 512;
+    const originalHeight = lottieData.h || lottieData.height || 512;
     const frameRate = lottieData.fr || 30;
     const inPoint = lottieData.ip || 0;
     const outPoint = lottieData.op || 0;
     const duration = (outPoint - inPoint) / frameRate;
     const filename = path.basename(src, ".zip");
 
+    // 判断是否需要放大缩略图尺寸
+    let thumbnailWidth = originalWidth;
+    let thumbnailHeight = originalHeight;
+    let scaleFactor = 1;
+    
+    if (originalWidth < 250 && originalHeight < 250) {
+        scaleFactor = 2;
+        thumbnailWidth = originalWidth * scaleFactor;
+        thumbnailHeight = originalHeight * scaleFactor;
+        console.log(`小尺寸文件检测: ${originalWidth}x${originalHeight} -> 缩略图尺寸放大为 ${thumbnailWidth}x${thumbnailHeight} (${scaleFactor}x)`);
+    }
+
     const metadata = {
-      width,
-      height,
+      width: originalWidth,
+      height: originalHeight,
       frameRate,
       duration,
       name: filename,
       totalFrames: outPoint - inPoint,
       isZip: true,
+      thumbnailScale: scaleFactor,
+      thumbnailWidth,
+      thumbnailHeight
     };
 
     console.log(
-      `ZIP Lottie信息: ${width}x${height}, ${duration.toFixed(
+      `ZIP Lottie信息: ${originalWidth}x${originalHeight}, ${duration.toFixed(
         1
       )}s, ${frameRate}fps, ${metadata.totalFrames}帧`
     );
+    if (scaleFactor > 1) {
+        console.log(`缩略图尺寸: ${thumbnailWidth}x${thumbnailHeight} (${scaleFactor}x 放大)`);
+    }
 
     const dir = path.dirname(dest);
     if (!fs.existsSync(dir)) {
@@ -423,8 +441,8 @@ module.exports = async ({ src, dest, item }) => {
 
     const pngBuffer = await generateBeautifulZipLottiePreview(
       processedLottieData,
-      width,
-      height,
+      thumbnailWidth,
+      thumbnailHeight,
       metadata
     );
     console.log(`PNG数据大小: ${pngBuffer.length} bytes`);
@@ -439,8 +457,8 @@ module.exports = async ({ src, dest, item }) => {
 
     console.log(`✓ 文件验证成功，大小: ${stats.size} bytes`);
 
-    item.height = metadata.height;
-    item.width = metadata.width;
+    item.height = originalHeight;
+    item.width = originalWidth;
     item.lottie = {
       ...metadata,
       duration: `${Math.round(metadata.duration * 100) / 100}秒`,

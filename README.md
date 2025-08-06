@@ -30,7 +30,46 @@ lottie插件-支持 Lottie 动画格式的预览插件，如果有images文件�
 
 ## 更新记录
 
-### 最新更新 (SVG 渲染优化)
+### 最新更新 (2024年12月)
+
+#### 缩略图质量优化 - 小尺寸文件2x放大
+- **问题描述**: 当Lottie文件的宽高都小于250像素时，生成的缩略图会显得模糊不清
+- **解决方案**: 为小尺寸文件实现智能缩放机制
+  - 检测条件：`width < 250 && height < 250`
+  - 自动将缩略图渲染尺寸放大为原尺寸的2倍
+  - 保持原始尺寸信息在元数据中，仅缩略图显示尺寸放大
+- **影响文件**: `thumbnail/lottie.js`, `thumbnail/lottie-zip.js`
+- **技术实现**: 
+  ```javascript
+  // 判断是否需要放大缩略图尺寸
+  let thumbnailWidth = originalWidth;
+  let thumbnailHeight = originalHeight;
+  let scaleFactor = 1;
+  
+  if (originalWidth < 250 && originalHeight < 250) {
+      scaleFactor = 2;
+      thumbnailWidth = originalWidth * scaleFactor;
+      thumbnailHeight = originalHeight * scaleFactor;
+  }
+  ```
+
+#### 进度条同步修复
+- **问题描述**: Lottie动画播放器的进度条与动画帧率不同步，存在延迟
+- **根本原因**: 进度条更新逻辑中使用了不必要的平滑过渡和最小更新间隔，导致与动画帧率脱节
+- **解决方案**: 简化进度条更新逻辑
+  - 移除平滑过渡变量：`lastProgress`, `lastUpdateTime`, `MIN_UPDATE_INTERVAL`
+  - 移除嵌套的`requestAnimationFrame`调用
+  - 直接更新进度条宽度，确保与动画帧率同步
+- **影响文件**: `viewer/lottie.html`, `viewer/lottie-zip.html`
+- **技术实现**:
+  ```javascript
+  function updateProgress(currentFrame, totalFrames) {
+    const currentProgress = (currentFrame / (totalFrames - 1)) * 100;
+    progressBar.style.width = `${currentProgress}%`;
+  }
+  ```
+
+### 历史更新 (SVG 渲染优化)
 
 1. **Canvas 到 SVG 迁移** - 将缩略图生成从 Canvas 渲染迁移到 SVG 渲染，提供更好的透明背景支持
 2. **透明背景支持** - 设置透明背景，更好地适应不同的 Eagle 主题
@@ -100,6 +139,8 @@ lottie插件-支持 Lottie 动画格式的预览插件，如果有images文件�
 - ✅ Lottie JSON 文件预览
 - ✅ Lottie ZIP 包预览（包含外部图片资源）
 - ✅ 高质量缩略图生成
+- ✅ 智能缩略图缩放（小尺寸文件自动2x放大）
 - ✅ SVG 渲染优化（透明背景）
+- ✅ 同步进度条显示（与动画帧率完全同步）
 - ✅ 错误处理和降级方案
 - ✅ 跨平台支持

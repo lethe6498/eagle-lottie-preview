@@ -197,28 +197,50 @@ module.exports = async ({ src, dest, item }) => {
 
             const lottieData = JSON.parse(await fs.promises.readFile(src, 'utf8'));
 
-            const width = lottieData.w || lottieData.width || 512;
-            const height = lottieData.h || lottieData.height || 512;
+            const originalWidth = lottieData.w || lottieData.width || 512;
+            const originalHeight = lottieData.h || lottieData.height || 512;
             const frameRate = lottieData.fr || 30;
             const inPoint = lottieData.ip || 0;
             const outPoint = lottieData.op || 0;
             const duration = (outPoint - inPoint) / frameRate;
             const name = lottieData.nm || path.basename(src, '.json');
 
+            // 判断是否需要放大缩略图尺寸
+            let thumbnailWidth = originalWidth;
+            let thumbnailHeight = originalHeight;
+            let scaleFactor = 1;
+            
+            if (originalWidth < 250 && originalHeight < 250) {
+                scaleFactor = 2;
+                thumbnailWidth = originalWidth * scaleFactor;
+                thumbnailHeight = originalHeight * scaleFactor;
+                console.log(`小尺寸文件检测: ${originalWidth}x${originalHeight} -> 缩略图尺寸放大为 ${thumbnailWidth}x${thumbnailHeight} (${scaleFactor}x)`);
+            }
+
             const metadata = {
-                width, height, frameRate, duration, name,
+                width: originalWidth, 
+                height: originalHeight, 
+                frameRate, 
+                duration, 
+                name,
                 totalFrames: outPoint - inPoint,
-                isZip: false
+                isZip: false,
+                thumbnailScale: scaleFactor,
+                thumbnailWidth,
+                thumbnailHeight
             };
 
-            console.log(`Lottie信息: ${width}x${height}, ${duration.toFixed(1)}s, ${frameRate}fps, ${metadata.totalFrames}帧`);
+            console.log(`Lottie信息: ${originalWidth}x${originalHeight}, ${duration.toFixed(1)}s, ${frameRate}fps, ${metadata.totalFrames}帧`);
+            if (scaleFactor > 1) {
+                console.log(`缩略图尺寸: ${thumbnailWidth}x${thumbnailHeight} (${scaleFactor}x 放大)`);
+            }
 
             const dir = path.dirname(dest);
             if (!fs.existsSync(dir)) {
                 fs.mkdirSync(dir, { recursive: true });
             }
 
-            const pngBuffer = await generateBeautifulLottiePreview(lottieData, width, height, metadata);
+            const pngBuffer = await generateBeautifulLottiePreview(lottieData, thumbnailWidth, thumbnailHeight, metadata);
             console.log(`PNG数据大小: ${pngBuffer.length} bytes`);
 
             await fs.promises.writeFile(dest, pngBuffer);
@@ -231,8 +253,8 @@ module.exports = async ({ src, dest, item }) => {
 
             console.log(`✓ 文件验证成功，大小: ${stats.size} bytes`);
 
-            item.height = height;
-            item.width = width;
+            item.height = originalHeight;
+            item.width = originalWidth;
             item.lottie = {
                 ...metadata,
                 duration: `${Math.round(duration * 100) / 100}秒`,
