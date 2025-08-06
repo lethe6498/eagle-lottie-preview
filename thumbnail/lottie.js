@@ -1,224 +1,165 @@
-const fs = require('fs');
 const path = require('path');
+const fs = require('fs');
 
 /**
  * 检查是否为Lottie文件
  */
 async function isLottieFile(filePath) {
     try {
-        const data = JSON.parse(await fs.promises.readFile(filePath, 'utf8'));
-        return (
-            data.v !== undefined &&
-            data.ip !== undefined &&
-            data.op !== undefined &&
-            data.fr !== undefined &&
-            (data.w !== undefined || data.width !== undefined) &&
-            (data.h !== undefined || data.height !== undefined) &&
-            data.layers !== undefined
-        );
+        const content = await fs.promises.readFile(filePath, 'utf8');
+        const data = JSON.parse(content);
+        return data.v && (data.layers || data.assets);
     } catch (error) {
         return false;
     }
 }
 
-
 /**
- * 绘制播放按钮（基于playbtn.png）
+ * 绘制播放按钮（使用playbtn.png）
  */
-async function drawPlayButton(ctx, centerX, centerY, size) {
+async function drawPlayButton(svg, centerX, centerY, size) {
     try {
-        const { loadImage } = require('canvas');
-        const playBtnPath = path.join(__dirname, '../images/playbtn.png');
+        const playbtnPath = path.join(__dirname, '..', 'images', 'playbtn.png');
+        const playbtnBuffer = await fs.promises.readFile(playbtnPath);
+        const base64Data = playbtnBuffer.toString('base64');
         
-        // 如果PNG文件存在，使用PNG图片
-        if (fs.existsSync(playBtnPath)) {
-            try {
-                const image = await loadImage(playBtnPath);
-                const drawSize = size;
-                ctx.drawImage(image, 
-                    centerX - drawSize / 2, 
-                    centerY - drawSize / 2, 
-                    drawSize, 
-                    drawSize
-                );
-                return; // 成功加载并绘制了PNG
-            } catch (error) {
-                console.log('加载PNG图片失败，使用基础播放按钮:', error.message);
-            }
-        }
+        const buttonSize = size * 0.8;
+        const x = centerX - buttonSize / 2;
+        const y = centerY - buttonSize / 2;
         
-        // 降级到基础播放按钮
-        drawBasicPlayButton(ctx, centerX, centerY, size);
+        svg += `<image href="data:image/png;base64,${base64Data}" x="${x}" y="${y}" width="${buttonSize}" height="${buttonSize}" />`;
+        
+        return svg;
     } catch (error) {
-        console.log('绘制PNG播放按钮失败，使用基础播放按钮:', error.message);
-        drawBasicPlayButton(ctx, centerX, centerY, size);
+        console.log('无法加载playbtn.png，使用SVG绘制播放按钮');
+        return drawBasicPlayButton(svg, centerX, centerY, size);
     }
 }
 
 /**
- * 绘制基础播放按钮（降级方案）
+ * 绘制基础播放按钮（SVG）
  */
-function drawBasicPlayButton(ctx, centerX, centerY, size) {
-    const buttonSize = size;
-    const iconSize = buttonSize * 0.6;
-
-    ctx.save();
-
-    // 背景圆角矩形 - 深紫到黑渐变
-    const backgroundGradient = ctx.createLinearGradient(
-        centerX - buttonSize / 2, centerY - buttonSize / 2,
-        centerX + buttonSize / 2, centerY + buttonSize / 2
-    );
-    backgroundGradient.addColorStop(0, '#1D003D');
-    backgroundGradient.addColorStop(1, '#000000');
+function drawBasicPlayButton(svg, centerX, centerY, size) {
+    const buttonSize = size * 0.6;
+    const triangleSize = buttonSize * 0.4;
     
-    const cornerRadius = buttonSize * 0.25;
-    ctx.beginPath();
-    ctx.roundRect(centerX - buttonSize / 2, centerY - buttonSize / 2, buttonSize, buttonSize, cornerRadius);
-    ctx.fillStyle = backgroundGradient;
-    ctx.fill();
-
-    // 中心圆形 - 蓝绿渐变
-    const circleGradient = ctx.createLinearGradient(
-        centerX - iconSize * 0.37, centerY - iconSize * 0.37,
-        centerX + iconSize * 0.37, centerY + iconSize * 0.37
-    );
-    circleGradient.addColorStop(0, '#008CFF');
-    circleGradient.addColorStop(1, '#8AFFA1');
-    
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, iconSize * 0.37, 0, 2 * Math.PI);
-    ctx.fillStyle = circleGradient;
-    ctx.fill();
+    // 外圆
+    svg += `<circle cx="${centerX}" cy="${centerY}" r="${buttonSize}" fill="rgba(255, 255, 255, 0.2)" stroke="rgba(255, 255, 255, 0.3)" stroke-width="2" />`;
     
     // 播放三角形
-    ctx.beginPath();
-    ctx.moveTo(centerX - iconSize / 4, centerY - iconSize / 3);
-    ctx.lineTo(centerX - iconSize / 4, centerY + iconSize / 3);
-    ctx.lineTo(centerX + iconSize / 3, centerY);
-    ctx.closePath();
-    ctx.fillStyle = 'white';
-    ctx.fill();
-
-    ctx.restore();
+    const points = [
+        centerX - triangleSize / 2,
+        centerY - triangleSize / 2,
+        centerX - triangleSize / 2,
+        centerY + triangleSize / 2,
+        centerX + triangleSize / 2,
+        centerY
+    ].join(' ');
+    
+    svg += `<polygon points="${points}" fill="white" />`;
+    
+    return svg;
 }
 
-
 /**
- * 生成美观的Lottie预览
+ * 生成美观的Lottie预览（SVG版本）
  */
 async function generateBeautifulLottiePreview(lottieData, width, height, metadata = {}) {
     try {
-        const { createCanvas } = require('canvas');
-        const canvas = createCanvas(width, height);
-        const ctx = canvas.getContext('2d');
-        
-        // 添加roundRect polyfill
-        addRoundRectPolyfill();
-
-        // 创建深色渐变背景（与ZIP版本保持一致）
-        const backgroundGradient = ctx.createLinearGradient(0, 0, 0, height);
-        backgroundGradient.addColorStop(0, '#1D003D');
-        backgroundGradient.addColorStop(1, '#000000');
-        ctx.fillStyle = backgroundGradient;
-        ctx.fillRect(0, 0, width, height);
-
-        // 添加圆角
         const cornerRadius = Math.min(width, height) * 0.15;
-        ctx.beginPath();
-        ctx.roundRect(0, 0, width, height, cornerRadius);
-        ctx.clip();
-
         const centerX = width / 2;
         const centerY = height / 2;
-
+        
+        // 创建SVG
+        let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">`;
+        
+        // 定义圆角矩形
+        svg += `<defs><clipPath id="roundedCorners"><rect width="${width}" height="${height}" rx="${cornerRadius}" ry="${cornerRadius}" /></clipPath></defs>`;
+        
+        // 应用圆角裁剪
+        svg += `<g clip-path="url(#roundedCorners)">`;
+        
+        // 透明背景（不绘制任何背景）
+        
         // 绘制播放按钮
         const buttonSize = Math.min(width, height) * 0.35;
-        await drawPlayButton(ctx, centerX, centerY, buttonSize);
-
-        return canvas.toBuffer('image/png');
+        svg = await drawPlayButton(svg, centerX, centerY, buttonSize);
+        
+        svg += `</g></svg>`;
+        
+        // 将SVG转换为PNG buffer
+        return await svgToPngBuffer(svg, width, height);
 
     } catch (error) {
-        console.log('Canvas渲染失败，使用基础预览:', error.message);
+        console.log('SVG渲染失败，使用基础预览:', error.message);
         return generateBasicPreview(width, height, metadata);
     }
 }
 
 /**
- * Canvas的roundRect polyfill
+ * 将SVG转换为PNG buffer
  */
-function addRoundRectPolyfill() {
-    const { CanvasRenderingContext2D } = require('canvas');
-    if (!CanvasRenderingContext2D.prototype.roundRect) {
-        CanvasRenderingContext2D.prototype.roundRect = function (x, y, width, height, radius) {
-            if (typeof radius === 'number') {
-                radius = { tl: radius, tr: radius, br: radius, bl: radius };
-            } else {
-                radius = { ...{ tl: 0, tr: 0, br: 0, bl: 0 }, ...radius };
-            }
-
-            this.beginPath();
-            this.moveTo(x + radius.tl, y);
-            this.lineTo(x + width - radius.tr, y);
-            this.quadraticCurveTo(x + width, y, x + width, y + radius.tr);
-            this.lineTo(x + width, y + height - radius.br);
-            this.quadraticCurveTo(x + width, y + height, x + width - radius.br, y + height);
-            this.lineTo(x + radius.bl, y + height);
-            this.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
-            this.lineTo(x, y + radius.tl);
-            this.quadraticCurveTo(x, y, x + radius.tl, y);
-            this.closePath();
-
-            return this;
-        };
+async function svgToPngBuffer(svg, width, height) {
+    try {
+        // 使用canvas将SVG转换为PNG
+        const { createCanvas, loadImage } = require('canvas');
+        const canvas = createCanvas(width, height);
+        const ctx = canvas.getContext('2d');
+        
+        // 创建透明背景
+        ctx.clearRect(0, 0, width, height);
+        
+        // 将SVG转换为data URL
+        const svgDataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+        
+        // 加载SVG图像
+        const img = await loadImage(svgDataUrl);
+        ctx.drawImage(img, 0, 0);
+        
+        return canvas.toBuffer('image/png');
+    } catch (error) {
+        console.log('SVG转PNG失败，使用基础预览:', error.message);
+        return generateBasicPreview(width, height, {});
     }
 }
 
 /**
- * 基础预览
+ * 基础预览（SVG版本）
  */
 function generateBasicPreview(width, height, metadata) {
     try {
-        const { createCanvas } = require('canvas');
-        const canvas = createCanvas(width, height);
-        const ctx = canvas.getContext('2d');
-        
-        // 添加roundRect polyfill
-        addRoundRectPolyfill();
-
-        // 深色渐变背景
-        const gradient = ctx.createLinearGradient(0, 0, 0, height);
-        gradient.addColorStop(0, '#1D003D');
-        gradient.addColorStop(1, '#000000');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, width, height);
-
-        // 简单播放按钮
         const centerX = width / 2;
         const centerY = height / 2;
         const buttonSize = Math.min(width, height) * 0.25;
-
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, buttonSize, 0, 2 * Math.PI);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-        ctx.fill();
-
+        
+        // 创建SVG
+        let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">`;
+        
+        // 透明背景
+        
+        // 简单播放按钮
+        svg += `<circle cx="${centerX}" cy="${centerY}" r="${buttonSize}" fill="rgba(255, 255, 255, 0.2)" stroke="rgba(255, 255, 255, 0.3)" stroke-width="2" />`;
+        
         // 播放三角形
-        ctx.beginPath();
-        ctx.moveTo(centerX - buttonSize / 2, centerY - buttonSize / 2);
-        ctx.lineTo(centerX - buttonSize / 2, centerY + buttonSize / 2);
-        ctx.lineTo(centerX + buttonSize / 2, centerY);
-        ctx.closePath();
-        ctx.fillStyle = 'white';
-        ctx.fill();
-
+        const triangleSize = buttonSize * 0.6;
+        const points = [
+            centerX - triangleSize / 2,
+            centerY - triangleSize / 2,
+            centerX - triangleSize / 2,
+            centerY + triangleSize / 2,
+            centerX + triangleSize / 2,
+            centerY
+        ].join(' ');
+        
+        svg += `<polygon points="${points}" fill="white" />`;
+        
         // 标题
-        ctx.fillStyle = 'white';
-        ctx.font = `bold ${Math.max(16, width / 20)}px Arial`;
-        ctx.textAlign = 'center';
-        ctx.fillText('Lottie', centerX, centerY - buttonSize - 20);
-
-        return canvas.toBuffer('image/png');
+        svg += `<text x="${centerX}" y="${centerY - buttonSize - 20}" text-anchor="middle" fill="white" font-family="Arial" font-size="${Math.max(16, width / 20)}" font-weight="bold">Lottie</text>`;
+        
+        svg += `</svg>`;
+        
+        // 转换为PNG
+        return svgToPngBuffer(svg, width, height);
     } catch (error) {
         console.error('基础预览失败:', error.message);
         return generateMinimalPNG();
@@ -296,7 +237,7 @@ module.exports = async ({ src, dest, item }) => {
                 ...metadata,
                 duration: `${Math.round(duration * 100) / 100}秒`,
                 frameRate: `${frameRate}fps`,
-                thumbnailType: 'beautiful_canvas',
+                thumbnailType: 'beautiful_svg',
                 isZip: false
             };
 

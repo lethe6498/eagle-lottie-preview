@@ -28,26 +28,51 @@ lottie插件-支持 Lottie 动画格式的预览插件，如果有images文件�
 
 **总计删除了约 410KB 的无用文件，项目现在更加干净，只保留了实际需要的文件。**
 
-## Canvas 修复记录
+## 更新记录
 
-### 修复内容
+### 最新更新 (SVG 渲染优化)
 
-1. **roundRect polyfill 实现** - 为 Canvas 添加了 `roundRect` 方法的 polyfill，解决了在某些 Node.js 版本中不支持该 API 的问题
-2. **错误处理优化** - 改进了 Canvas 渲染失败时的错误处理机制
-3. **降级方案** - 当 Canvas 渲染失败时，提供基础预览和最小 PNG 作为降级方案
+1. **Canvas 到 SVG 迁移** - 将缩略图生成从 Canvas 渲染迁移到 SVG 渲染，提供更好的透明背景支持
+2. **透明背景支持** - 设置透明背景，更好地适应不同的 Eagle 主题
+3. **保留 playbtn.png** - 继续使用 playbtn.png 作为播放按钮图标
+4. **错误处理优化** - 改进了 SVG 渲染失败时的错误处理机制
+5. **降级方案** - 当 SVG 渲染失败时，提供基础预览和最小 PNG 作为降级方案
 
 ### 技术实现
 
-- 在 `thumbnail/lottie.js` 和 `thumbnail/lottie-zip.js` 中添加了 `addRoundRectPolyfill()` 函数
-- 实现了完整的 `roundRect` polyfill，支持单个半径和对象形式的半径配置
+- 在 `thumbnail/lottie.js` 和 `thumbnail/lottie-zip.js` 中将 Canvas 渲染替换为 SVG 渲染
+- 使用 SVG 的 `<image>` 元素嵌入 playbtn.png 作为 base64 数据
+- 实现了 `svgToPngBuffer()` 函数将 SVG 转换为 PNG buffer（仍需要Canvas依赖）
 - 添加了 `generateBasicPreview()` 和 `generateMinimalPNG()` 作为降级方案
+
+### 关于Canvas依赖的说明
+
+虽然主要渲染逻辑已迁移到SVG，但`canvas`依赖仍然需要保留，原因如下：
+
+1. **SVG转PNG转换**：Eagle插件需要PNG格式的缩略图，所以需要Canvas将SVG转换为PNG
+2. **打包兼容性**：Canvas依赖会被一起打包到插件中，确保在不同平台上都能正常工作
+3. **降级方案**：当SVG渲染失败时，Canvas用于生成基础预览和最小PNG
+4. **跨平台支持**：Canvas包本身支持Windows、macOS和Linux，确保插件在各平台都能正常运行
+
+**注意**：Canvas依赖在打包时会被包含在插件中，不会影响插件的正常使用。
+
+### 历史更新
+
+#### Canvas 修复记录
+- **roundRect polyfill 实现** - 为 Canvas 添加了 `roundRect` 方法的 polyfill，解决了在某些 Node.js 版本中不支持该 API 的问题
+- **错误处理优化** - 改进了 Canvas 渲染失败时的错误处理机制
+- **降级方案** - 当 Canvas 渲染失败时，提供基础预览和最小 PNG 作为降级方案
+
+#### 项目清理记录
+- 删除了约 410KB 的无用文件，包括测试文件、系统文件和未使用的 ICNS 相关文件
+- 项目现在更加干净，只保留了实际需要的文件
 
 ## 支持项
 
 ### 系统要求
 
 - **Node.js**: 建议使用 14.x 或更高版本
-- **Canvas**: 需要安装 `canvas` 包，建议版本 `^2.11.0` 或更高
+- **Canvas**: 需要安装 `canvas` 包（用于SVG转PNG），建议版本 `^2.11.0` 或更高
 - **操作系统**: 支持 macOS、Windows、Linux
 
 ### 依赖项
@@ -75,6 +100,6 @@ lottie插件-支持 Lottie 动画格式的预览插件，如果有images文件�
 - ✅ Lottie JSON 文件预览
 - ✅ Lottie ZIP 包预览（包含外部图片资源）
 - ✅ 高质量缩略图生成
-- ✅ Canvas 渲染优化
+- ✅ SVG 渲染优化（透明背景）
 - ✅ 错误处理和降级方案
 - ✅ 跨平台支持

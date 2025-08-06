@@ -1,6 +1,5 @@
-const fs = require("fs");
 const path = require("path");
-const os = require("os");
+const fs = require("fs");
 const zipUtil = require("../js/zip-util");
 
 /**
@@ -8,336 +7,221 @@ const zipUtil = require("../js/zip-util");
  */
 async function isLottieFile(filePath) {
   try {
-    const data = JSON.parse(await fs.promises.readFile(filePath, "utf8"));
-    return (
-      data.v !== undefined &&
-      data.ip !== undefined &&
-      data.op !== undefined &&
-      data.fr !== undefined &&
-      (data.w !== undefined || data.width !== undefined) &&
-      (data.h !== undefined || data.height !== undefined) &&
-      data.layers !== undefined
-    );
+    const content = await fs.promises.readFile(filePath, "utf8");
+    const data = JSON.parse(content);
+    return data.v && (data.layers || data.assets);
   } catch (error) {
     return false;
   }
 }
 
 /**
- * 分析Lottie数据
+ * 分析Lottie数据，提取颜色信息
  */
 function analyzeLottieData(lottieData) {
-  const analysis = {
-    dominantColors: [],
-    hasShapes: false,
-    hasImages: false,
-    layerCount: 0,
-    backgroundColor: null,
-    totalFrames: (lottieData.op || 60) - (lottieData.ip || 0),
-    frameRate: lottieData.fr || 30,
+  const colors = new Set();
+  
+  // 递归提取颜色
+  function extractColors(obj) {
+    if (typeof obj !== 'object' || obj === null) return;
+    
+    if (Array.isArray(obj)) {
+      obj.forEach(extractColors);
+      return;
+    }
+    
+    // 检查是否为颜色数组 [r, g, b, a]
+    if (Array.isArray(obj) && obj.length >= 3 && obj.length <= 4) {
+      const [r, g, b, a = 1] = obj;
+      if (typeof r === 'number' && typeof g === 'number' && typeof b === 'number') {
+        const hexColor = convertLottieColorToHex([r, g, b, a]);
+        if (hexColor) colors.add(hexColor);
+      }
+      return;
+    }
+    
+    // 检查颜色属性
+    if (obj.c && Array.isArray(obj.c)) {
+      const hexColor = convertLottieColorToHex(obj.c);
+      if (hexColor) colors.add(hexColor);
+    }
+    
+    // 递归处理其他属性
+    Object.values(obj).forEach(extractColors);
+  }
+  
+  extractColors(lottieData);
+  
+  const colorArray = Array.from(colors);
+  return {
+    dominantColors: colorArray.slice(0, 3),
+    totalColors: colorArray.length,
+    colorPalette: colorArray
   };
-
-  if (lottieData.bg) {
-    analysis.backgroundColor = lottieData.bg;
-  }
-
-  if (lottieData.layers && Array.isArray(lottieData.layers)) {
-    analysis.layerCount = lottieData.layers.length;
-
-    for (const layer of lottieData.layers) {
-      if (layer.ty === 4 && layer.shapes) {
-        analysis.hasShapes = true;
-        extractColorsFromLayer(layer, analysis.dominantColors);
-      }
-      if (layer.ty === 2) {
-        analysis.hasImages = true;
-      }
-      if (layer.ty === 1 && layer.sc) {
-        analysis.dominantColors.push(layer.sc);
-      }
-    }
-  }
-
-  if (lottieData.assets && Array.isArray(lottieData.assets)) {
-    for (const asset of lottieData.assets) {
-      if (asset.p && !asset.e) {
-        analysis.hasImages = true;
-      }
-    }
-  }
-
-  analysis.dominantColors = [...new Set(analysis.dominantColors)].slice(0, 3);
-  return analysis;
 }
 
+/**
+ * 从图层中提取颜色
+ */
 function extractColorsFromLayer(layer, colorArray) {
-  if (!layer.shapes) return;
-
-  for (const shape of layer.shapes) {
-    if (shape.ty === "fl" && shape.c && shape.c.k) {
-      const color = convertLottieColorToHex(shape.c.k);
-      if (color) colorArray.push(color);
-    }
-    if (shape.ty === "st" && shape.c && shape.c.k) {
-      const color = convertLottieColorToHex(shape.c.k);
-      if (color) colorArray.push(color);
-    }
-    if (shape.ty === "gr" && shape.it) {
-      extractColorsFromShapes(shape.it, colorArray);
-    }
+  if (layer.shapes) {
+    extractColorsFromShapes(layer.shapes, colorArray);
+  }
+  
+  if (layer.layers) {
+    layer.layers.forEach(subLayer => {
+      extractColorsFromLayer(subLayer, colorArray);
+    });
   }
 }
 
+/**
+ * 从形状中提取颜色
+ */
 function extractColorsFromShapes(shapes, colorArray) {
-  for (const shape of shapes) {
-    if (shape.ty === "fl" && shape.c && shape.c.k) {
-      const color = convertLottieColorToHex(shape.c.k);
-      if (color) colorArray.push(color);
+  shapes.forEach(shape => {
+    if (shape.it) {
+      shape.it.forEach(item => {
+        if (item.c && Array.isArray(item.c)) {
+          const hexColor = convertLottieColorToHex(item.c);
+          if (hexColor) colorArray.push(hexColor);
+        }
+      });
     }
-    if (shape.ty === "st" && shape.c && shape.c.k) {
-      const color = convertLottieColorToHex(shape.c.k);
-      if (color) colorArray.push(color);
-    }
-    if (shape.ty === "gr" && shape.it) {
-      extractColorsFromShapes(shape.it, colorArray);
-    }
-  }
+  });
 }
 
+/**
+ * 将Lottie颜色数组转换为十六进制
+ */
 function convertLottieColorToHex(colorArray) {
   if (!Array.isArray(colorArray) || colorArray.length < 3) return null;
-
-  const r = Math.round(colorArray[0] * 255);
-  const g = Math.round(colorArray[1] * 255);
-  const b = Math.round(colorArray[2] * 255);
-
-  return `#${r.toString(16).padStart(2, "0")}${g
-    .toString(16)
-    .padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+  
+  const [r, g, b, a = 1] = colorArray;
+  const red = Math.round(r * 255);
+  const green = Math.round(g * 255);
+  const blue = Math.round(b * 255);
+  
+  return `#${red.toString(16).padStart(2, '0')}${green.toString(16).padStart(2, '0')}${blue.toString(16).padStart(2, '0')}`;
 }
 
 /**
- * 绘制ZIP播放按钮（基于playbtn.png）
+ * 绘制ZIP播放按钮（使用playbtn.png）
  */
-async function drawZipPlayButton(ctx, centerX, centerY, size) {
+async function drawZipPlayButton(svg, centerX, centerY, size) {
   try {
-    const { loadImage } = require("canvas");
-    const playBtnPath = path.join(__dirname, "../images/playbtn.png");
-
-    // 如果PNG文件存在，使用PNG图片
-    if (fs.existsSync(playBtnPath)) {
-      try {
-        const image = await loadImage(playBtnPath);
-        const drawSize = size;
-        ctx.drawImage(
-          image,
-          centerX - drawSize / 2,
-          centerY - drawSize / 2,
-          drawSize,
-          drawSize
-        );
-        return; // 成功加载并绘制了PNG
-      } catch (error) {
-        console.log("加载PNG图片失败，使用基础播放按钮:", error.message);
-      }
-    }
-
-    // 降级到基础播放按钮
-    drawBasicZipPlayButton(ctx, centerX, centerY, size);
+    const playbtnPath = path.join(__dirname, '..', 'images', 'playbtn.png');
+    const playbtnBuffer = await fs.promises.readFile(playbtnPath);
+    const base64Data = playbtnBuffer.toString('base64');
+    
+    const buttonSize = size * 0.8;
+    const x = centerX - buttonSize / 2;
+    const y = centerY - buttonSize / 2;
+    
+    svg += `<image href="data:image/png;base64,${base64Data}" x="${x}" y="${y}" width="${buttonSize}" height="${buttonSize}" />`;
+    
+    return svg;
   } catch (error) {
-    console.log("绘制PNG播放按钮失败，使用基础播放按钮:", error.message);
-    drawBasicZipPlayButton(ctx, centerX, centerY, size);
+    console.log('无法加载playbtn.png，使用SVG绘制播放按钮');
+    return drawBasicZipPlayButton(svg, centerX, centerY, size);
   }
 }
 
 /**
- * 绘制基础ZIP播放按钮（降级方案）
+ * 绘制基础ZIP播放按钮（SVG）
  */
-function drawBasicZipPlayButton(ctx, centerX, centerY, size) {
-  const buttonSize = size;
-  const iconSize = buttonSize * 0.6;
-
-  ctx.save();
-
-  // 背景圆角矩形 - 深紫到黑渐变
-  const backgroundGradient = ctx.createLinearGradient(
-    centerX - buttonSize / 2,
-    centerY - buttonSize / 2,
-    centerX + buttonSize / 2,
-    centerY + buttonSize / 2
-  );
-  backgroundGradient.addColorStop(0, "#1D003D");
-  backgroundGradient.addColorStop(1, "#000000");
-
-  const cornerRadius = buttonSize * 0.25;
-  ctx.beginPath();
-  ctx.roundRect(
-    centerX - buttonSize / 2,
-    centerY - buttonSize / 2,
-    buttonSize,
-    buttonSize,
-    cornerRadius
-  );
-  ctx.fillStyle = backgroundGradient;
-  ctx.fill();
-
-  // 中心圆形 - 蓝绿渐变
-  const circleGradient = ctx.createLinearGradient(
-    centerX - iconSize * 0.37,
-    centerY - iconSize * 0.37,
-    centerX + iconSize * 0.37,
-    centerY + iconSize * 0.37
-  );
-  circleGradient.addColorStop(0, "#008CFF");
-  circleGradient.addColorStop(1, "#8AFFA1");
-
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, iconSize * 0.37, 0, 2 * Math.PI);
-  ctx.fillStyle = circleGradient;
-  ctx.fill();
-
+function drawBasicZipPlayButton(svg, centerX, centerY, size) {
+  const buttonSize = size * 0.6;
+  const triangleSize = buttonSize * 0.4;
+  
+  // 外圆
+  svg += `<circle cx="${centerX}" cy="${centerY}" r="${buttonSize}" fill="rgba(255, 255, 255, 0.2)" stroke="rgba(255, 255, 255, 0.3)" stroke-width="2" />`;
+  
   // 播放三角形
-  ctx.beginPath();
-  ctx.moveTo(centerX - iconSize / 4, centerY - iconSize / 3);
-  ctx.lineTo(centerX - iconSize / 4, centerY + iconSize / 3);
-  ctx.lineTo(centerX + iconSize / 3, centerY);
-  ctx.closePath();
-  ctx.fillStyle = "white";
-  ctx.fill();
-
-  ctx.restore();
+  const points = [
+    centerX - triangleSize / 2,
+    centerY - triangleSize / 2,
+    centerX - triangleSize / 2,
+    centerY + triangleSize / 2,
+    centerX + triangleSize / 2,
+    centerY
+  ].join(' ');
+  
+  svg += `<polygon points="${points}" fill="white" />`;
+  
+  return svg;
 }
 
 /**
- * 绘制ZIP标记
+ * 绘制ZIP标记（SVG版本）
  */
-function drawZipBadge(ctx, x, y, width, height) {
-  ctx.save();
-
-  // ZIP标记背景 - 现代化设计
-  const badgeGradient = ctx.createLinearGradient(x, y, x + width, y + height);
-  badgeGradient.addColorStop(0, "#2563eb");
-  badgeGradient.addColorStop(1, "#1d4ed8");
-
-  ctx.fillStyle = badgeGradient;
-  ctx.beginPath();
-  ctx.roundRect(x, y, width, height, 8);
-  ctx.fill();
-
-  // 添加边框高光
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.roundRect(x + 0.5, y + 0.5, width - 1, height - 1, 7);
-  ctx.stroke();
-
+function drawZipBadge(svg, x, y, width, height) {
+/*   const cornerRadius = 4;
+  
+  // ZIP背景
+  svg += `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${cornerRadius}" ry="${cornerRadius}" fill="#FF6B35" stroke="#FF4500" stroke-width="1" />`;
+  
   // ZIP文字
-  ctx.fillStyle = "white";
-  ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("ZIP", x + width / 2, y + height / 2);
-
-  ctx.restore();
+  const textX = x + width / 2;
+  const textY = y + height / 2 + 4;
+  svg += `<text x="${textX}" y="${textY}" text-anchor="middle" fill="white" font-family="Arial" font-size="10" font-weight="bold">ZIP</text>`;
+   */
+  return svg;
 }
 
 /**
- * 处理外部资源
+ * 处理包含资源的Lottie文件
  */
 async function processLottieWithAssets(lottieData, extractedFiles) {
-  try {
-    if (!lottieData.assets || !Array.isArray(lottieData.assets)) {
-      return lottieData;
-    }
-
-    console.log("开始处理ZIP中的资源，assets 数量:", lottieData.assets.length);
-
-    const imageFiles = Object.keys(extractedFiles).filter((filename) => {
-      const ext = filename.split(".").pop().toLowerCase();
-      return ["png", "jpg", "jpeg", "gif", "svg", "webp"].includes(ext);
-    });
-
-    console.log("找到图片文件:", imageFiles);
-
-    for (let i = 0; i < lottieData.assets.length; i++) {
-      const asset = lottieData.assets[i];
-
-      if (asset.e === 1 || !asset.p) continue;
-
-      let matchedFile = null;
-      const assetPath = asset.p;
-
-      const possiblePaths = [
-        assetPath,
-        asset.u ? asset.u + assetPath : null,
-        asset.u ? asset.u.replace(/\/$/, "") + "/" + assetPath : null,
-        "images/" + assetPath,
-        "./images/" + assetPath,
-        assetPath.split("/").pop(),
-      ].filter(Boolean);
-
-      for (const possiblePath of possiblePaths) {
-        matchedFile = imageFiles.find((filename) => {
-          return (
-            filename === possiblePath ||
-            filename.endsWith("/" + possiblePath) ||
-            filename.split("/").pop() === possiblePath
-          );
-        });
-        if (matchedFile) {
-          console.log("找到匹配文件:", possiblePath, "->", matchedFile);
-          break;
+  const processedData = { ...lottieData };
+  
+  // 处理资源
+  if (processedData.assets) {
+    for (let i = 0; i < processedData.assets.length; i++) {
+      const asset = processedData.assets[i];
+      
+      if (asset.p && typeof asset.p === 'string') {
+        // 查找对应的文件
+        const fileName = asset.p;
+        const fileData = extractedFiles[fileName];
+        
+        if (fileData) {
+          const mimeType = getMimeType(fileName);
+          const base64Data = await fileToBase64(fileData, mimeType);
+          asset.p = `data:${mimeType};base64,${base64Data}`;
         }
       }
-
-      if (matchedFile && extractedFiles[matchedFile]) {
-        try {
-          const mimeType = getMimeType(matchedFile);
-          const base64 = await fileToBase64(
-            extractedFiles[matchedFile],
-            mimeType
-          );
-
-          asset.e = 1;
-          asset.p = base64;
-          if (asset.u) asset.u = "";
-
-          console.log(`✅ 成功处理资源: ${assetPath} -> ${matchedFile}`);
-        } catch (error) {
-          console.error(`❌ 处理资源时出错: ${assetPath}`, error);
-        }
-      } else {
-        console.warn(`⚠️ 未找到匹配的图片资源: ${assetPath}`);
-      }
     }
-
-    return lottieData;
-  } catch (error) {
-    console.error("处理外部资源时出错:", error);
-    return lottieData;
   }
-}
-
-function getMimeType(filename) {
-  const ext = filename.split(".").pop().toLowerCase();
-  const mimeTypes = {
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    gif: "image/gif",
-    svg: "image/svg+xml",
-    webp: "image/webp",
-  };
-  return mimeTypes[ext] || "image/png";
-}
-
-async function fileToBase64(uint8Array, mimeType) {
-  const base64String = Buffer.from(uint8Array).toString("base64");
-  return `data:${mimeType};base64,${base64String}`;
+  
+  return processedData;
 }
 
 /**
- * 生成美观的ZIP Lottie预览
+ * 获取MIME类型
+ */
+function getMimeType(filename) {
+  const ext = path.extname(filename).toLowerCase();
+  const mimeTypes = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml'
+  };
+  return mimeTypes[ext] || 'application/octet-stream';
+}
+
+/**
+ * 将文件转换为Base64
+ */
+async function fileToBase64(uint8Array, mimeType) {
+  return Buffer.from(uint8Array).toString('base64');
+}
+
+/**
+ * 生成美观的ZIP Lottie预览（SVG版本）
  */
 async function generateBeautifulZipLottiePreview(
   lottieData,
@@ -346,150 +230,116 @@ async function generateBeautifulZipLottiePreview(
   metadata = {}
 ) {
   try {
-    const { createCanvas } = require("canvas");
-    const canvas = createCanvas(width, height);
-    const ctx = canvas.getContext("2d");
-    
-    // 添加roundRect polyfill
-    addRoundRectPolyfill();
-
     const analysis = analyzeLottieData(lottieData);
     console.log("ZIP Lottie分析结果:", analysis);
 
-    // 创建深色渐变背景（与普通版本保持一致）
-    const backgroundGradient = ctx.createLinearGradient(0, 0, 0, height);
-    backgroundGradient.addColorStop(0, "#1D003D"); // 深紫色
-    backgroundGradient.addColorStop(1, "#000000");
-    ctx.fillStyle = backgroundGradient;
-    ctx.fillRect(0, 0, width, height);
-
-    // 如果有分析出的颜色，添加色彩覆盖层
-    if (analysis.dominantColors.length > 0) {
-      ctx.globalAlpha = 0.1;
-      const colorOverlay = ctx.createRadialGradient(
-        width / 2,
-        height / 2,
-        0,
-        width / 2,
-        height / 2,
-        Math.max(width, height) / 2
-      );
-      colorOverlay.addColorStop(0, analysis.dominantColors[0]);
-      colorOverlay.addColorStop(1, "transparent");
-      ctx.fillStyle = colorOverlay;
-      ctx.fillRect(0, 0, width, height);
-      ctx.globalAlpha = 1;
-    }
-
-    // 添加圆角
     const cornerRadius = Math.min(width, height) * 0.15;
-    ctx.beginPath();
-    ctx.roundRect(0, 0, width, height, cornerRadius);
-    ctx.clip();
-
     const centerX = width / 2;
     const centerY = height / 2;
-
-    /*     // 绘制ZIP标记（右上角）
-    drawZipBadge(ctx, width - 57, 12, 45, 22); */
-
+    
+    // 创建SVG
+    let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">`;
+    
+    // 定义圆角矩形
+    svg += `<defs><clipPath id="roundedCorners"><rect width="${width}" height="${height}" rx="${cornerRadius}" ry="${cornerRadius}" /></clipPath></defs>`;
+    
+    // 应用圆角裁剪
+    svg += `<g clip-path="url(#roundedCorners)">`;
+    
+    // 透明背景（不绘制任何背景）
+    
+    // 如果有分析出的颜色，添加色彩覆盖层
+    if (analysis.dominantColors.length > 0) {
+      const color = analysis.dominantColors[0];
+      svg += `<circle cx="${centerX}" cy="${centerY}" r="${Math.max(width, height) / 2}" fill="${color}" opacity="0.1" />`;
+    }
+    
     // 绘制ZIP播放按钮
     const buttonSize = Math.min(width, height) * 0.35;
-    await drawZipPlayButton(ctx, centerX, centerY, buttonSize);
-    return canvas.toBuffer("image/png");
+    svg = await drawZipPlayButton(svg, centerX, centerY, buttonSize);
+    
+/*     // 绘制ZIP标记（右上角）
+    svg = drawZipBadge(svg, width - 57, 12, 45, 22); */
+    
+    svg += `</g></svg>`;
+    
+    // 将SVG转换为PNG buffer
+    return await svgToPngBuffer(svg, width, height);
   } catch (error) {
-    console.log("Canvas渲染失败，使用基础预览:", error.message);
+    console.log("SVG渲染失败，使用基础预览:", error.message);
     return generateBasicZipPreview(width, height, metadata);
   }
 }
 
 /**
- * Canvas的roundRect polyfill
+ * 将SVG转换为PNG buffer
  */
-function addRoundRectPolyfill() {
-  const { CanvasRenderingContext2D } = require("canvas");
-  if (!CanvasRenderingContext2D.prototype.roundRect) {
-    CanvasRenderingContext2D.prototype.roundRect = function (
-      x,
-      y,
-      width,
-      height,
-      radius
-    ) {
-      if (typeof radius === "number") {
-        radius = { tl: radius, tr: radius, br: radius, bl: radius };
-      } else {
-        radius = { ...{ tl: 0, tr: 0, br: 0, bl: 0 }, ...radius };
-      }
-
-      this.beginPath();
-      this.moveTo(x + radius.tl, y);
-      this.lineTo(x + width - radius.tr, y);
-      this.quadraticCurveTo(x + width, y, x + width, y + radius.tr);
-      this.lineTo(x + width, y + height - radius.br);
-      this.quadraticCurveTo(
-        x + width,
-        y + height,
-        x + width - radius.br,
-        y + height
-      );
-      this.lineTo(x + radius.bl, y + height);
-      this.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
-      this.lineTo(x, y + radius.tl);
-      this.quadraticCurveTo(x, y, x + radius.tl, y);
-      this.closePath();
-
-      return this;
-    };
+async function svgToPngBuffer(svg, width, height) {
+  try {
+    // 使用canvas将SVG转换为PNG
+    const { createCanvas, loadImage } = require('canvas');
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    
+    // 创建透明背景
+    ctx.clearRect(0, 0, width, height);
+    
+    // 将SVG转换为data URL
+    const svgDataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+    
+    // 加载SVG图像
+    const img = await loadImage(svgDataUrl);
+    ctx.drawImage(img, 0, 0);
+    
+    return canvas.toBuffer('image/png');
+  } catch (error) {
+    console.log('SVG转PNG失败，使用基础预览:', error.message);
+    return generateBasicZipPreview(width, height, {});
   }
 }
 
+/**
+ * 基础ZIP预览（SVG版本）
+ */
 function generateBasicZipPreview(width, height, metadata) {
   try {
-    const { createCanvas } = require("canvas");
-    const canvas = createCanvas(width, height);
-    const ctx = canvas.getContext("2d");
-    
-    // 添加roundRect polyfill
-    addRoundRectPolyfill();
-
-    const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, "#1D003D");
-    gradient.addColorStop(1, "#000000");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
-
-    // ZIP标记
-    drawZipBadge(ctx, 10, 10, 40, 20);
-
     const centerX = width / 2;
     const centerY = height / 2;
     const buttonSize = Math.min(width, height) * 0.25;
-
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, buttonSize, 0, 2 * Math.PI);
-    ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(centerX - buttonSize / 2, centerY - buttonSize / 2);
-    ctx.lineTo(centerX - buttonSize / 2, centerY + buttonSize / 2);
-    ctx.lineTo(centerX + buttonSize / 2, centerY);
-    ctx.closePath();
-    ctx.fillStyle = "white";
-    ctx.fill();
-
-    ctx.fillStyle = "white";
-    ctx.font = `bold ${Math.max(16, width / 20)}px Arial`;
-    ctx.textAlign = "center";
-    ctx.fillText("Lottie", centerX, centerY - buttonSize - 30);
-
-    ctx.font = `${Math.max(12, width / 25)}px Arial`;
-    ctx.fillText("Archive", centerX, centerY - buttonSize - 10);
-
-    return canvas.toBuffer("image/png");
+    
+    // 创建SVG
+    let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">`;
+    
+    // 透明背景
+    
+    // 简单播放按钮
+    svg += `<circle cx="${centerX}" cy="${centerY}" r="${buttonSize}" fill="rgba(255, 255, 255, 0.2)" stroke="rgba(255, 255, 255, 0.3)" stroke-width="2" />`;
+    
+    // 播放三角形
+    const triangleSize = buttonSize * 0.6;
+    const points = [
+      centerX - triangleSize / 2,
+      centerY - triangleSize / 2,
+      centerX - triangleSize / 2,
+      centerY + triangleSize / 2,
+      centerX + triangleSize / 2,
+      centerY
+    ].join(' ');
+    
+    svg += `<polygon points="${points}" fill="white" />`;
+    
+/*     // ZIP标记
+    svg = drawZipBadge(svg, width - 57, 12, 45, 22); */
+    
+    // 标题
+    svg += `<text x="${centerX}" y="${centerY - buttonSize - 20}" text-anchor="middle" fill="white" font-family="Arial" font-size="${Math.max(16, width / 20)}" font-weight="bold">ZIP Lottie</text>`;
+    
+    svg += `</svg>`;
+    
+    // 转换为PNG
+    return svgToPngBuffer(svg, width, height);
   } catch (error) {
-    console.error("基础ZIP预览失败:", error.message);
+    console.error('基础ZIP预览失败:', error.message);
     return generateMinimalPNG();
   }
 }
@@ -599,7 +449,7 @@ module.exports = async ({ src, dest, item }) => {
       isZip: true,
       extractedJsonPath: lottieJsonPath,
       extractDir: tempDir,
-      thumbnailType: "beautiful_canvas_zip",
+      thumbnailType: "beautiful_svg_zip",
     };
 
     item.zipExtract = {
